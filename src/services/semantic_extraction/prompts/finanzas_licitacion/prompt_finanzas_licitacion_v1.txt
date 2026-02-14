@@ -1,0 +1,29 @@
+
+==============================
+EXTRACCIÓN FINANZAS LICITACIÓN
+==============================
+
+LICITACIÓN ID: {LICITACION_ID}
+
+A partir del CONTEXTO entregado, extrae exclusivamente información financiera
+relacionada con la licitación.
+
+REGLAS IMPORTANTES:
+- Usa SOLO información presente en el contexto.
+- No inventes valores.
+- Si un dato no existe, usa null.
+- Responde SOLO en JSON válido.
+- No incluyas texto adicional.
+
+CAMPOS A EXTRAER (si existen):
+- presupuesto_referencial
+- moneda
+- forma_pago
+- plazo_pago
+- fuente_financiamiento
+- garantias
+- multas
+
+<CONTEXT>
+{contexto}
+</CONTEXT>

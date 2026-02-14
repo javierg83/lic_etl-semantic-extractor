@@ -1,35 +1,42 @@
 import json
 import redis
 import time
+import os
 from src.config import REDIS_DB, REDIS_HOST, REDIS_PORT, REDIS_USERNAME, REDIS_PASSWORD
 from src.graph.semantic_graph import build_semantic_graph
 from src.graph.state import GraphState
 
-def process_message(licitacion_id: str):
-    print(f"🛠️ Procesando Semantic Extraction para ID: {licitacion_id}")
+def process_message(licitacion_id: str, documento_ids: list):
+    print(f"🛠️ Procesando Semantic Extraction para ID: {licitacion_id} | Docs: {len(documento_ids)}")
     
     try:
         app = build_semantic_graph()
         
-        initial_state: GraphState = {
-            "licitacion_id": licitacion_id,
-            "document_text": None,
-            "extraction_finances": None,
-            "extraction_items": None,
-            "status": "init",
-            "errors": [],
-            "current_step": "init"
-        }
+        initial_state = GraphState(
+            licitacion_id=licitacion_id,
+            documento_ids=documento_ids,
+            document_text=None,
+            extraction_finances=None,
+            extraction_items=None,
+            extraction_basic_data=None, # Added basic data initialization
+            status="init",
+            errors=[],
+            current_step="init"
+        )
         
+        # Invoke the graph
         result = app.invoke(initial_state)
         
-        if result.get("status") == "completed":
-            print(f"✅ Extracción completada para {licitacion_id}")
+        # Check output state
+        if result.get("errors"):
+             print(f"⚠️ Extracción finalizada con errores: {result.get('errors')}")
         else:
-            print(f"⚠️ Extracción finalizó con estado: {result.get('status')}")
+             print(f"✅ Extracción completada exitosamente para {licitacion_id}")
             
     except Exception as e:
         print(f"❌ Error procesando {licitacion_id}: {e}")
+        import traceback
+        traceback.print_exc()
 
 def main():
     print(f"📡 Worker Semántico Iniciado.")
@@ -44,7 +51,7 @@ def main():
         decode_responses=True
     )
     
-    QUEUE_NAME = "semantic_extraction_queue"
+    QUEUE_NAME = "semantic_queue"
     
     while True:
         try:
@@ -57,10 +64,36 @@ def main():
                 try:
                     data = json.loads(message)
                     lic_id = data.get("licitacion_id")
-                    if lic_id:
-                        process_message(lic_id)
+                    doc_ids = data.get("documento_ids", [])
+                    
+                    if lic_id and doc_ids:
+                        # IMPORTANTE: El extractor de documentos guarda keys como "pdf:{filename}:chunk:{i}"
+                        # El runner semántico espera que _load_documents_to_memory busque "doc_raw_page:{doc_id}:*"
+                        # O debemos cambiar el runner o debemos adaptar aquí.
+                        # Por ahora, vamos a asumir que doc_ids contiene los filenames (ej "pliego.pdf")
+                        
+                        # Ejecutamos el pipeline para los 3 conceptos
+                        from src.services.semantic_extraction.runner import run_semantic_extraction
+                        
+                        print(f"🚀 Iniciando extracción semántica para {lic_id} | Docs: {doc_ids}")
+                        
+                        conceptos = ["DATOS_BASICOS_LICITACION", "ITEMS_LICITACION", "FINANZAS_LICITACION"]
+                        
+                        for concepto in conceptos:
+                            try:
+                                run_semantic_extraction(
+                                    licitacion_id=lic_id,
+                                    concepto=concepto,
+                                    documento_ids=doc_ids, # Pasamos filenames, el runner deberá adaptarse o las keys coincidir
+                                    nombre_licitacion=lic_id,
+                                    top_k=50 if concepto == "ITEMS_LICITACION" else 20,
+                                    min_score=0.2
+                                )
+                            except Exception as e:
+                                print(f"❌ Error en concepto {concepto}: {e}")
+
                     else:
-                        print("⚠️ Mensaje sin licitacion_id")
+                        print("⚠️ Mensaje incompleto (falta licitacion_id o documento_ids)")
                 except json.JSONDecodeError:
                     print(f"⚠️ Error decodificando JSON: {message}")
                     
