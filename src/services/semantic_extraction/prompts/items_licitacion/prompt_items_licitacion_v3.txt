@@ -43,8 +43,13 @@ REGLAS CRÍTICAS (OBLIGATORIAS)
 
 7. Si no logras detectar ítems, debes explicar por qué en el campo `resumen.observaciones`.
 
-8. Debes incluir un campo adicional `"explicacion_proceso"` (string) donde expliques brevemente cómo abordaste la tarea,
    qué estrategias seguiste para detectar los ítems, y si hubo dudas o ambigüedades en el proceso.
+
+9. MANEJO DE COMILLAS EN JSON (CRÍTICO):
+   - Si el contenido de un campo (como descripción o nombre) incluye comillas dobles ("), DEBES escaparlas con una barra invertida (\").
+   - INCORRECTO: "descripcion": "Caja de clavos de 2""
+   - CORRECTO: "descripcion": "Caja de clavos de 2\""
+   - El JSON final debe ser sintácticamente válido.
 
 ==============================
 EJEMPLOS ESPECIALES

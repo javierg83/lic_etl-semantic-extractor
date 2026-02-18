@@ -58,8 +58,8 @@ def _load_documents_to_memory(documento_ids: List[str]) -> List[Dict[str, Any]]:
     for doc_id in documento_ids:
         # Intentar patrón 1: "doc_raw_page:{doc_id}:*_full" (Legacy / Semantic Loader)
         patterns = [
-            f"doc_raw_page:{doc_id}:*_full",
-            f"pdf:{doc_id}:chunk:*"  # Pattern usado por lic_etl-document-extractor
+            f"doc_raw_page:{doc_id}:*", # Match genérico para cualquier chunk (full, element, etc) con ese ID base
+            f"pdf:{doc_id}:chunk:*"  # Pattern legacy
         ]
         
         found_any = False
@@ -261,11 +261,45 @@ def run_semantic_extraction(
             VALUES (%s, %s, %s)
         """, (semantic_run_id, concepto, json.dumps(result, default=_json_serial)))
 
+        # Obtener mapa de UUIDs de archivos
+        from src.services.licitacion_service import obtener_mapa_uuid_por_interno
+        mapa_archivos = obtener_mapa_uuid_por_interno(licitacion_id)
+        print(f"[SEMANTIC] Mapa de archivos cargado: {len(mapa_archivos)} documentos")
+
         for c in semantic_chunks:
+            # Parsear metadata desde redis_key
+            # Formato esperado: doc_raw_page:<lic_int>_<file_int>_<name>:p<page>...
+            # Ejemplo: doc_raw_page:10_5_archivo.pdf:p3_full
+            
+            redis_key = c["redis_key"]
+            pagina = None
+            documento_uuid = None
+            
+            try:
+                # 1. Extraer ID Interno del archivo
+                # Buscamos el bloque entre "doc_raw_page:" y ":p"
+                # Regex: doc_raw_page:\d+_(\d+)_.*:p(\d+)
+                match = re.search(r"doc_raw_page:\d+_(\d+)_.+:p(\d+)", redis_key)
+                if match:
+                    file_int_id = match.group(1)
+                    page_num = match.group(2)
+                    
+                    documento_uuid = mapa_archivos.get(file_int_id)
+                    pagina = int(page_num)
+            except Exception as e:
+                print(f"[⚠️] Error parseando metadata de clave '{redis_key}': {e}")
+
             cur.execute("""
-                INSERT INTO semantic_evidences (semantic_run_id, redis_key, texto_fragmento)
-                VALUES (%s, %s, %s)
-            """, (semantic_run_id, c["redis_key"], c["texto"]))
+                INSERT INTO semantic_evidences (semantic_run_id, redis_key, texto_fragmento, score_similitud, pagina, documento_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (
+                semantic_run_id, 
+                c["redis_key"], 
+                c["texto"],
+                c.get("distancia"), # Score (distancia)
+                pagina,
+                documento_uuid
+            ))
 
         conn.commit()
         print("[✅] Extracción semántica persistida correctamente")

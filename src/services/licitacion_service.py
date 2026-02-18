@@ -197,10 +197,31 @@ def get_or_create_licitacion(nombre_archivo: str) -> str:
         nuevo_id = str(uuid.uuid4())
         cur.execute("""
             INSERT INTO licitaciones (id, nombre, estado, fecha_carga)
-            VALUES (%s, %s, 'ACTIVA', now())
+            VALUES (%s, %s, 'PENDIENTE', now())
         """, (nuevo_id, nombre_archivo))
         conn.commit()
         return nuevo_id
+    finally:
+        cur.close()
+        conn.close()
+
+def obtener_mapa_uuid_por_interno(licitacion_id: str) -> dict:
+    """
+    Retorna un diccionario {str(id_interno): str(id_uuid)} para los archivos de una licitación.
+    Útil para mapear desde Redis (que usa id_interno) a Postgres (que usa UUID).
+    """
+    conn = get_pg_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT id_interno, id
+            FROM licitacion_archivos
+            WHERE licitacion_id = %s
+        """, (str(licitacion_id),))
+        rows = cur.fetchall()
+        # Clave: id_interno como string (porque viene así del regex)
+        # Valor: id (uuid) como string
+        return {str(r[0]): str(r[1]) for r in rows}
     finally:
         cur.close()
         conn.close()
@@ -288,20 +309,99 @@ def guardar_especificaciones_tecnicas(conn, semantic_run_id: str, especificacion
         conn.commit()
 
 # --------------------------------------------------
+# --------------------------------------------------
 # ✅ FINANZAS_LICITACION
 # --------------------------------------------------
 
 def guardar_finanzas_licitacion(conn, licitacion_id, finanzas: dict):
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Campos JSON/Texto complejos
-    garantias_txt = finanzas.get("garantias")
-    if isinstance(garantias_txt, (list, dict)):
-        garantias_txt = json.dumps(garantias_txt, ensure_ascii=False)
-        
-    multas_txt = finanzas.get("multas")
-    if isinstance(multas_txt, (list, dict)):
-        multas_txt = json.dumps(multas_txt, ensure_ascii=False)
+    def _ensure_json(val):
+        if not val:
+            return None
+        if isinstance(val, (list, dict)):
+            return json.dumps(val, ensure_ascii=False)
+        if isinstance(val, str):
+            # Si es string, ver si es un JSON valido
+            try:
+                json.loads(val)
+                return val # Es un JSON valido en string
+            except json.JSONDecodeError:
+                # No es JSON, lo envolvemos
+                return json.dumps({"texto_detectado": val}, ensure_ascii=False)
+        return json.dumps({"valor": str(val)}, ensure_ascii=False)
+
+    garantias_txt = _ensure_json(finanzas.get("garantias"))
+    multas_txt = _ensure_json(finanzas.get("multas"))
+
+    valores = {
+        "licitacion_id": licitacion_id,
+        "presupuesto_referencial": finanzas.get("presupuesto_referencial"),
+        "moneda": finanzas.get("moneda"),
+        "forma_pago": finanzas.get("forma_pago"),
+        "plazo_pago": finanzas.get("plazo_pago"),
+        "fuente_financiamiento": finanzas.get("fuente_financiamiento"),
+        "garantias": garantias_txt,
+        "multas": multas_txt,
+        "otros": str(finanzas.get("otros", "")),
+        "resumen": finanzas.get("resumen")
+    }
+
+    # Upsert logic manual
+    sql_update = """
+        UPDATE finanzas_licitacion
+        SET
+            presupuesto_referencial = %(presupuesto_referencial)s,
+            moneda = %(moneda)s,
+            forma_pago = %(forma_pago)s,
+            plazo_pago = %(plazo_pago)s,
+            fuente_financiamiento = %(fuente_financiamiento)s,
+            garantias = %(garantias)s,
+            multas = %(multas)s,
+            otros = %(otros)s,
+            resumen = %(resumen)s,
+            updated_at = now()
+        WHERE licitacion_id = %(licitacion_id)s
+    """
+
+    sql_insert = """
+        INSERT INTO finanzas_licitacion (
+            licitacion_id,
+            presupuesto_referencial,
+            moneda,
+            forma_pago,
+            plazo_pago,
+            fuente_financiamiento,
+            garantias,
+            multas,
+            otros,
+            resumen
+        ) VALUES (
+            %(licitacion_id)s,
+            %(presupuesto_referencial)s,
+            %(moneda)s,
+            %(forma_pago)s,
+            %(plazo_pago)s,
+            %(fuente_financiamiento)s,
+            %(garantias)s,
+            %(multas)s,
+            %(otros)s,
+            %(resumen)s
+        )
+    """
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql_update, valores)
+            if cur.rowcount == 0:
+                cur.execute(sql_insert, valores)
+        conn.commit()
+        print(f"[{now}] ✅ Finanzas persistidas correctamente | licitacion_id={licitacion_id}")
+    except Exception:
+        print(f"[{now}] ❌ Error persistiendo finanzas | licitacion_id={licitacion_id}")
+        traceback.print_exc()
+        conn.rollback()
+        raise
 
     valores = {
         "licitacion_id": licitacion_id,
@@ -413,12 +513,12 @@ def actualizar_datos_basicos_licitacion(licitacion_id: str, datos: dict) -> None
         # numero_licitacion -> codigo_licitacion
         
         mapping = {
-            "titulo": "nombre",
+            # "titulo": "nombre", # COMENTADO: No actualizar nombre/titulo para respetar el original
             "descripcion": "descripcion",
             "organismo": "organismo_solicitante",
             "numero_licitacion": "codigo_licitacion",
             # Si vienen ya con nombre de columna:
-            "nombre": "nombre",
+            # "nombre": "nombre", # COMENTADO: No actualizar nombre para respetar el original
             "organismo_solicitante": "organismo_solicitante",
             "codigo_licitacion": "codigo_licitacion"
         }
@@ -435,6 +535,8 @@ def actualizar_datos_basicos_licitacion(licitacion_id: str, datos: dict) -> None
             update_values.append(datos["estado"])
 
         if not update_fields:
+            # Si solo venia el nombre y lo ignoramos, puede quedar vacío
+            print(f"⚠️ No hay campos para actualizar en datos básicos de {licitacion_id} (Nombre ignorado)")
             return
 
         update_values.append(str(licitacion_id))
@@ -448,6 +550,21 @@ def actualizar_datos_basicos_licitacion(licitacion_id: str, datos: dict) -> None
         print(f"✅ Datos básicos actualizados para {licitacion_id}")
     except Exception as e:
         print(f"❌ Error actualizando datos básicos: {e}")
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
+
+def actualizar_estado_licitacion(licitacion_id: str, nuevo_estado: str) -> None:
+    """Actualiza solo el estado de la licitación."""
+    conn = get_pg_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute("UPDATE licitaciones SET estado = %s WHERE id = %s", (nuevo_estado, str(licitacion_id)))
+        conn.commit()
+        print(f"🔄 Estado de Licitación {licitacion_id} actualizado a: {nuevo_estado}")
+    except Exception as e:
+        print(f"❌ Error actualizando estado de licitación: {e}")
         conn.rollback()
     finally:
         cur.close()

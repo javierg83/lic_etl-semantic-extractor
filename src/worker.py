@@ -74,10 +74,16 @@ def main():
                         
                         # Ejecutamos el pipeline para los 3 conceptos
                         from src.services.semantic_extraction.runner import run_semantic_extraction
+                        from src.services.licitacion_service import actualizar_estado_licitacion
+                        from src.constants.states import LicitacionStatus
                         
                         print(f"🚀 Iniciando extracción semántica para {lic_id} | Docs: {doc_ids}")
                         
+                        # Set Estado INICIO
+                        actualizar_estado_licitacion(lic_id, LicitacionStatus.EXTRACCION_SEMANTICA_EN_PROCESO)
+                        
                         conceptos = ["DATOS_BASICOS_LICITACION", "ITEMS_LICITACION", "FINANZAS_LICITACION"]
+                        exito_total = True
                         
                         for concepto in conceptos:
                             try:
@@ -91,6 +97,17 @@ def main():
                                 )
                             except Exception as e:
                                 print(f"❌ Error en concepto {concepto}: {e}")
+                                exito_total = False
+                        
+                        # Set Estado FIN (Si al menos terminó el loop, marcamos completada, errores individuales ya se loguearon)
+                        # Podríamos usar un estado parcial si falló algo, pero por ahora simplifiquemos.
+                        if exito_total:
+                            actualizar_estado_licitacion(lic_id, LicitacionStatus.EXTRACCION_SEMANTICA_COMPLETADA)
+                        else:
+                             # Opcional: Si falló todo, ERROR? O completada con warnings?
+                             # Dejemos completada para que no se tranque, el usuario verá logs o resultados vacíos.
+                             print("⚠️ Hubo errores parciales, pero marcando como completada.")
+                             actualizar_estado_licitacion(lic_id, LicitacionStatus.EXTRACCION_SEMANTICA_COMPLETADA)
 
                     else:
                         print("⚠️ Mensaje incompleto (falta licitacion_id o documento_ids)")
@@ -101,7 +118,7 @@ def main():
             print("⚠️ Error de conexión con Redis. Reintentando...")
             time.sleep(5)
         except Exception as e:
-            print(f"⚠️ Error inesperado: {e}")
+            print(f"⚠️ Error inesperado en loop principal: {e}")
             time.sleep(5)
 
 if __name__ == "__main__":
