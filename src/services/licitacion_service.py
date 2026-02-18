@@ -23,7 +23,7 @@ def obtener_licitacion_por_id(licitacion_id: str) -> dict | None:
     cur = conn.cursor()
     try:
         cur.execute("""
-            SELECT id, codigo_licitacion, nombre, descripcion, estado, organismo_solicitante, fecha_carga
+            SELECT id, codigo_licitacion, nombre, descripcion, estado, organismo_solicitante, fecha_carga, estado_publicacion
             FROM licitaciones
             WHERE id = %s
         """, (str(licitacion_id),))
@@ -37,7 +37,8 @@ def obtener_licitacion_por_id(licitacion_id: str) -> dict | None:
             "descripcion": row[3],
             "estado": row[4],
             "organismo_solicitante": row[5],
-            "fecha_carga": row[6].isoformat() if row[6] else None
+            "fecha_carga": row[6].isoformat() if row[6] else None,
+            "estado_publicacion": row[7]
         }
     finally:
         cur.close()
@@ -48,7 +49,7 @@ def obtener_todas_las_licitaciones() -> list[dict]:
     cur = conn.cursor()
     try:
         cur.execute("""
-            SELECT id, codigo_licitacion, nombre, descripcion, estado, fecha_carga
+            SELECT id, codigo_licitacion, nombre, descripcion, estado, fecha_carga, estado_publicacion
             FROM licitaciones
             ORDER BY fecha_carga DESC
         """)
@@ -60,7 +61,8 @@ def obtener_todas_las_licitaciones() -> list[dict]:
                 "nombre": r[2],
                 "descripcion": r[3],
                 "estado": r[4],
-                "fecha_carga": r[5].isoformat() if r[5] else None
+                "fecha_carga": r[5].isoformat() if r[5] else None,
+                "estado_publicacion": r[6]
             }
             for r in rows
         ]
@@ -531,7 +533,7 @@ def actualizar_datos_basicos_licitacion(licitacion_id: str, datos: dict) -> None
         
         # También estado si viniera
         if "estado" in datos:
-            update_fields.append("estado = %s")
+            update_fields.append("estado_publicacion = %s")
             update_values.append(datos["estado"])
 
         if not update_fields:
