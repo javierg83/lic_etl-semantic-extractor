@@ -517,11 +517,11 @@ def actualizar_datos_basicos_licitacion(licitacion_id: str, datos: dict) -> None
         mapping = {
             # "titulo": "nombre", # COMENTADO: No actualizar nombre/titulo para respetar el original
             "descripcion": "descripcion",
-            "organismo": "organismo_solicitante",
+            "entidad_solicitante": "entidad_solicitante",
+            "unidad_compra": "unidad_compra",
             "numero_licitacion": "codigo_licitacion",
             # Si vienen ya con nombre de columna:
             # "nombre": "nombre", # COMENTADO: No actualizar nombre para respetar el original
-            "organismo_solicitante": "organismo_solicitante",
             "codigo_licitacion": "codigo_licitacion"
         }
 

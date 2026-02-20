@@ -14,7 +14,10 @@ logger = logging.getLogger(__name__)
 # ==========================================================
 # CONFIGURACIÓN DE PROMPT
 # ==========================================================
-PROMPT_VERSION = "v1"
+# ==========================================================
+# CONFIGURACIÓN DE PROMPT
+# ==========================================================
+PROMPT_VERSION = "v2"
 
 
 class DatosBasicosLicitacionExtractor(BaseSemanticExtractor):
@@ -40,7 +43,11 @@ class DatosBasicosLicitacionExtractor(BaseSemanticExtractor):
             "entidad licitante",
             "organismo solicitante",
             "institución que solicita la licitación",
-            "empresa u organismo público que convoca"
+            "empresa u organismo público que convoca",
+            "unidad de compra",
+            "unidad técnica",
+            "departamento solicitante",
+            "gerencia mandante"
         ]
 
         logger.info(

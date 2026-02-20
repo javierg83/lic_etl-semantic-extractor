@@ -21,7 +21,8 @@ def normalize_datos_basicos_licitacion(data: dict) -> dict:
         "nombre": _clean(data.get("nombre")),
         "descripcion": _clean(data.get("descripcion")),
         "estado": _clean(data.get("estado")),
-        "organismo_solicitante": _clean(data.get("organismo_solicitante")),
+        "entidad_solicitante": _clean(data.get("entidad_solicitante")),
+        "unidad_compra": _clean(data.get("unidad_compra")),
     }
 
     logger.debug(
