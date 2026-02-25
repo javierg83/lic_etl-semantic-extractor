@@ -32,9 +32,11 @@ REGLAS CRÍTICAS (OBLIGATORIAS)
      - antecedentes del proveedor
    - Solo extrae bienes o servicios explícitamente solicitados para cotizar o adquirir.
 
-5. Trazabilidad mínima:
+5. Trazabilidad mínima (FUENTES):
    - Cada ítem DEBE incluir al menos una fuente en el campo "fuentes".
-   - Indica página y, si existe, redis_key.
+   - Indica el "documento" leyendo el tag [ARCHIVO: ...].
+   - Indica la "pagina" extrayendo el número como entero del tag [REDIS_KEY: ...:p<numero_pagina>_...].
+   - El campo "redis_key" DEBE contener el string COMPLETO del tag [REDIS_KEY: ...] correspondiente a esa página. ¡ESTO ES CRÍTICO Y OBLIGATORIO!
 
 6. Formato de salida:
    - Devuelve SOLO JSON válido.
@@ -46,10 +48,10 @@ REGLAS CRÍTICAS (OBLIGATORIAS)
    qué estrategias seguiste para detectar los ítems, y si hubo dudas o ambigüedades en el proceso.
 
 9. MANEJO DE COMILLAS EN JSON (CRÍTICO):
-   - Si el contenido de un campo (como descripción o nombre) incluye comillas dobles ("), DEBES escaparlas con una barra invertida (\").
-   - INCORRECTO: "descripcion": "Caja de clavos de 2""
-   - CORRECTO: "descripcion": "Caja de clavos de 2\""
-   - El JSON final debe ser sintácticamente válido.
+   - Si el contenido de un campo (como descripción, nombre, o texto extraído en "parrafo") incluye comillas dobles ("), DEBES escaparlas con una barra invertida (\").
+   - INCORRECTO: "parrafo": "Se requieren 5 cajas de clavo de 2" de 100 unidades"
+   - CORRECTO: "parrafo": "Se requieren 5 cajas de clavo de 2\" de 100 unidades"
+   - El JSON final debe ser sintácticamente válido para poder ser parseado.
 
 ==============================
 EJEMPLOS ESPECIALES
@@ -127,12 +129,14 @@ FORMATO DE SALIDA (JSON ESTRICTO)
       "especificaciones": [],
       "criterios_cumplimiento": [],
       "exclusiones_o_prohibiciones": [],
+      "razonamiento": "Justificación de por qué extrajiste este ítem",
       "fuentes": [
         {
-          "documento": null,
+          "documento": "string",
           "documento_id": null,
-          "pagina": null,
-          "redis_key": null
+          "pagina": 0,
+          "parrafo": "string",
+          "redis_key": "string"
         }
       ],
       "confianza_item": 0.0,

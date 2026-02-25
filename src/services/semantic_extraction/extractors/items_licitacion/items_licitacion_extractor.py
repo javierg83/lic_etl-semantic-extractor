@@ -25,7 +25,8 @@ PROMPT_VERSION = "v3"
 def clean_json_output(text: str) -> str:
     """
     Limpia un bloque de texto que puede estar envuelto en ```json ... ```
-    y normaliza comillas raras.
+    y normaliza comillas raras. Además, intenta escapar comillas dobles
+    no escapadas que estén en el medio de un texto (ej. medidas como 2").
     """
     if not text or not isinstance(text, str):
         return ""
@@ -43,6 +44,12 @@ def clean_json_output(text: str) -> str:
             .replace("‘", "'")
             .replace("’", "'")
     )
+    
+    # Intento heurístico de sanitizar comillas no escapadas usadas para pulgadas (ej. 2")
+    # Busca un dígito seguido de una comilla doble y luego un carácter que no sea coma ni llave de cierre,
+    # y reemplaza la comilla por la forma escapada.
+    # Expresión: (?<=\d)"(?!\s*[:,\]}]) -> \\"
+    text = re.sub(r'(?<=\d)"(?!\s*[:,\]}])', r'\\"', text)
 
     return text.strip()
 

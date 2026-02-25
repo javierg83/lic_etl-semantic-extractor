@@ -65,6 +65,18 @@ def validate_finanzas_licitacion_schema(raw_output: str) -> dict:
     for key in expected_keys:
         data.setdefault(key, None)
 
+    # Validar que los campos sean objetos con 'valor'
+    for key in expected_keys:
+        if data[key] is not None:
+            if not isinstance(data[key], dict):
+                raise FinanzasLicitacionSchemaError(
+                    f"Campo '{key}' debe ser un objeto con 'valor', 'razonamiento', 'fuentes'"
+                )
+            if "valor" not in data[key]:
+                raise FinanzasLicitacionSchemaError(
+                    f"Campo '{key}' carece del campo obligatorio 'valor'"
+                )
+
     logger.info(
         "[FINANZAS][SCHEMA] Validación OK | campos=%s",
         list(data.keys())

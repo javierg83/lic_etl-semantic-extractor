@@ -107,7 +107,7 @@ def validate_items_licitacion_schema(data: Dict[str, Any]) -> None:
                     f"Item #{idx}: 'unidad' debe ser string o null"
                 )
 
-        for field in ["descripcion", "notas"]:
+        for field in ["descripcion", "notas", "razonamiento"]:
             if field in item and item[field] is not None:
                 if not isinstance(item[field], str):
                     raise ItemsLicitacionSchemaError(
@@ -141,11 +141,16 @@ def validate_items_licitacion_schema(data: Dict[str, Any]) -> None:
                     f"Item #{idx}, fuente #{f_idx}: no es objeto JSON"
                 )
 
-            for key in ["documento", "documento_id", "pagina", "redis_key"]:
+            for key in ["documento", "documento_id", "pagina"]:
                 if key not in fuente:
                     raise ItemsLicitacionSchemaError(
                         f"Item #{idx}, fuente #{f_idx}: falta campo '{key}'"
                     )
+
+            if "redis_key" not in fuente:
+                fuente["redis_key"] = None
+            elif fuente["redis_key"] is not None and not isinstance(fuente["redis_key"], str):
+                fuente["redis_key"] = str(fuente["redis_key"])
 
             if fuente["pagina"] is not None and not isinstance(fuente["pagina"], int):
                 # Intentar conversión si es string numérico

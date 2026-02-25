@@ -16,13 +16,22 @@ REGLAS IMPORTANTES:
 - No incluyas texto adicional.
 
 CAMPOS A EXTRAER (si existen):
-- presupuesto_referencial
-- moneda
-- forma_pago
-- plazo_pago
-- fuente_financiamiento
-- garantias
-- multas
+
+Para cada campo debes retornar un OBJETO que contenga obligatoriamente:
+- "valor": El dato extraído según la definición. (Puede ser null)
+- "razonamiento": Breve justificación de por qué extrajiste ese valor.
+- "fuentes": Arreglo de objetos ({"documento": string, "pagina": int, "parrafo": string}) de donde sacaste el dato exactamente. Para 'documento', extrae el nombre desde el tag [ARCHIVO: <nombre>].
+
+Estructura esperada:
+{
+  "presupuesto_referencial": { "valor": number | null, "razonamiento": string, "fuentes": [...] },
+  "moneda": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
+  "forma_pago": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
+  "plazo_pago": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
+  "fuente_financiamiento": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
+  "garantias": { "valor": array | object | null, "razonamiento": string, "fuentes": [...] },
+  "multas": { "valor": array | object | null, "razonamiento": string, "fuentes": [...] }
+}
 
 <CONTEXT>
 {contexto}

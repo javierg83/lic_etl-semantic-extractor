@@ -30,8 +30,18 @@ def process_message(licitacion_id: str, documento_ids: list):
         # Check output state
         if result.get("errors"):
              print(f"⚠️ Extracción finalizada con errores: {result.get('errors')}")
+             from src.services.licitacion_service import actualizar_estado_licitacion
+             from src.constants.states import LicitacionStatus
+             actualizar_estado_licitacion(licitacion_id, LicitacionStatus.EXTRACCION_SEMANTICA_COMPLETADA)
         else:
              print(f"✅ Extracción completada exitosamente para {licitacion_id}")
+             from src.services.licitacion_service import actualizar_estado_licitacion
+             from src.constants.states import LicitacionStatus
+             # Mark as Homologacion Completada if it reached the end of the graph correctly
+             if result.get("current_step") == "homologation_completed" or "homologation_result" in result:
+                actualizar_estado_licitacion(licitacion_id, LicitacionStatus.HOMOLOGACION_COMPLETADA)
+             else:
+                actualizar_estado_licitacion(licitacion_id, LicitacionStatus.EXTRACCION_SEMANTICA_COMPLETADA)
             
     except Exception as e:
         print(f"❌ Error procesando {licitacion_id}: {e}")
@@ -70,44 +80,12 @@ def main():
                         # IMPORTANTE: El extractor de documentos guarda keys como "pdf:{filename}:chunk:{i}"
                         # El runner semántico espera que _load_documents_to_memory busque "doc_raw_page:{doc_id}:*"
                         # O debemos cambiar el runner o debemos adaptar aquí.
-                        # Por ahora, vamos a asumir que doc_ids contiene los filenames (ej "pliego.pdf")
-                        
-                        # Ejecutamos el pipeline para los 3 conceptos
-                        from src.services.semantic_extraction.runner import run_semantic_extraction
+                        # Usamos la ejecución del grafo
                         from src.services.licitacion_service import actualizar_estado_licitacion
                         from src.constants.states import LicitacionStatus
                         
-                        print(f"🚀 Iniciando extracción semántica para {lic_id} | Docs: {doc_ids}")
-                        
-                        # Set Estado INICIO
                         actualizar_estado_licitacion(lic_id, LicitacionStatus.EXTRACCION_SEMANTICA_EN_PROCESO)
-                        
-                        conceptos = ["DATOS_BASICOS_LICITACION", "ITEMS_LICITACION", "FINANZAS_LICITACION"]
-                        exito_total = True
-                        
-                        for concepto in conceptos:
-                            try:
-                                run_semantic_extraction(
-                                    licitacion_id=lic_id,
-                                    concepto=concepto,
-                                    documento_ids=doc_ids, # Pasamos filenames, el runner deberá adaptarse o las keys coincidir
-                                    nombre_licitacion=lic_id,
-                                    top_k=50 if concepto == "ITEMS_LICITACION" else 20,
-                                    min_score=0.2
-                                )
-                            except Exception as e:
-                                print(f"❌ Error en concepto {concepto}: {e}")
-                                exito_total = False
-                        
-                        # Set Estado FIN (Si al menos terminó el loop, marcamos completada, errores individuales ya se loguearon)
-                        # Podríamos usar un estado parcial si falló algo, pero por ahora simplifiquemos.
-                        if exito_total:
-                            actualizar_estado_licitacion(lic_id, LicitacionStatus.EXTRACCION_SEMANTICA_COMPLETADA)
-                        else:
-                             # Opcional: Si falló todo, ERROR? O completada con warnings?
-                             # Dejemos completada para que no se tranque, el usuario verá logs o resultados vacíos.
-                             print("⚠️ Hubo errores parciales, pero marcando como completada.")
-                             actualizar_estado_licitacion(lic_id, LicitacionStatus.EXTRACCION_SEMANTICA_COMPLETADA)
+                        process_message(lic_id, doc_ids)
 
                     else:
                         print("⚠️ Mensaje incompleto (falta licitacion_id o documento_ids)")

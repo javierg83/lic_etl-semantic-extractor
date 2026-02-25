@@ -228,10 +228,43 @@ def obtener_mapa_uuid_por_interno(licitacion_id: str) -> dict:
         cur.close()
         conn.close()
 
+def guardar_auditoria(conn, licitacion_id: str, semantic_run_id: str, concepto: str, campo: str, payload: dict):
+    if not isinstance(payload, dict) or "valor" not in payload:
+        return # Skip if not our rich schema
+
+    valor = payload.get("valor")
+    razonamiento = payload.get("razonamiento")
+    fuentes = payload.get("fuentes", [])
+
+    if isinstance(valor, (dict, list)):
+        valor = json.dumps(valor, ensure_ascii=False)
+    
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO auditoria_extracciones_campos (
+                licitacion_id, 
+                semantic_run_id, 
+                concepto, 
+                campo_extraido, 
+                valor_extraido, 
+                razonamiento, 
+                lista_fuentes
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (
+            str(licitacion_id),
+            semantic_run_id,
+            concepto,
+            campo,
+            str(valor) if valor is not None else None,
+            razonamiento,
+            json.dumps(fuentes, ensure_ascii=False) if fuentes else None
+        ))
+
 def guardar_items_licitacion(conn, licitacion_id, semantic_run_id, items: list[dict]):
     with conn.cursor() as cur:
         # Ojo: conn viene de fuera, NO cerrarla aquí
         cur.execute("DELETE FROM items_licitacion WHERE semantic_run_id = %s", (semantic_run_id,))
+        # Audit wipe to maintain consistency for this run is handled by semantic_run_id cascading or we could explicitly delete here if needed, but keeping it simpler since we just insert.
         for item in items:
             cur.execute("""
                 INSERT INTO items_licitacion (
@@ -257,7 +290,7 @@ def guardar_items_licitacion(conn, licitacion_id, semantic_run_id, items: list[d
                 item.get("cantidad"),
                 item.get("unidad"),
                 item.get("descripcion"),
-                item.get("observaciones"),
+                item.get("notas") or item.get("observaciones"), # fallback to notas if observaciones not parsed correctly 
                 item.get("fuente_resumen"),
                 item.get("created_at") or datetime.utcnow(),
                 item.get("incompleto") or False,
@@ -265,6 +298,16 @@ def guardar_items_licitacion(conn, licitacion_id, semantic_run_id, items: list[d
                 item.get("incompleto_motivos") if isinstance(item.get("incompleto_motivos"), list) else None,
                 item.get("tiene_descripcion_tecnica") or False
             ))
+
+            # Audit para el item en general si trae razonamiento (v3)
+            # Como es un listado, simularemos el payload
+            payload_audit = {
+                "valor": item.get("nombre_item"),
+                "razonamiento": item.get("razonamiento"),
+                "fuentes": item.get("fuentes", [])
+            }
+            guardar_auditoria(conn, licitacion_id, semantic_run_id, "ITEMS_LICITACION", f"item_{item.get('item_key')}", payload_audit)
+
         conn.commit()
 
 def guardar_especificaciones_tecnicas(conn, semantic_run_id: str, especificaciones: list[dict]):
@@ -315,10 +358,17 @@ def guardar_especificaciones_tecnicas(conn, semantic_run_id: str, especificacion
 # ✅ FINANZAS_LICITACION
 # --------------------------------------------------
 
-def guardar_finanzas_licitacion(conn, licitacion_id, finanzas: dict):
+def guardar_finanzas_licitacion(conn, licitacion_id, finanzas: dict, semantic_run_id: str = None):
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
-    def _ensure_json(val):
+    def _extract_val(payload):
+        if not payload: return None
+        if isinstance(payload, dict) and "valor" in payload:
+            return payload.get("valor")
+        return payload
+
+    def _ensure_json(payload):
+        val = _extract_val(payload)
         if not val:
             return None
         if isinstance(val, (list, dict)):
@@ -338,15 +388,15 @@ def guardar_finanzas_licitacion(conn, licitacion_id, finanzas: dict):
 
     valores = {
         "licitacion_id": licitacion_id,
-        "presupuesto_referencial": finanzas.get("presupuesto_referencial"),
-        "moneda": finanzas.get("moneda"),
-        "forma_pago": finanzas.get("forma_pago"),
-        "plazo_pago": finanzas.get("plazo_pago"),
-        "fuente_financiamiento": finanzas.get("fuente_financiamiento"),
+        "presupuesto_referencial": _extract_val(finanzas.get("presupuesto_referencial")),
+        "moneda": _extract_val(finanzas.get("moneda")),
+        "forma_pago": _extract_val(finanzas.get("forma_pago")),
+        "plazo_pago": _extract_val(finanzas.get("plazo_pago")),
+        "fuente_financiamiento": _extract_val(finanzas.get("fuente_financiamiento")),
         "garantias": garantias_txt,
         "multas": multas_txt,
-        "otros": str(finanzas.get("otros", "")),
-        "resumen": finanzas.get("resumen")
+        "otros": str(_extract_val(finanzas.get("otros", ""))),
+        "resumen": _extract_val(finanzas.get("resumen"))
     }
 
     # Upsert logic manual
@@ -397,75 +447,12 @@ def guardar_finanzas_licitacion(conn, licitacion_id, finanzas: dict):
             cur.execute(sql_update, valores)
             if cur.rowcount == 0:
                 cur.execute(sql_insert, valores)
-        conn.commit()
-        print(f"[{now}] ✅ Finanzas persistidas correctamente | licitacion_id={licitacion_id}")
-    except Exception:
-        print(f"[{now}] ❌ Error persistiendo finanzas | licitacion_id={licitacion_id}")
-        traceback.print_exc()
-        conn.rollback()
-        raise
-
-    valores = {
-        "licitacion_id": licitacion_id,
-        "presupuesto_referencial": finanzas.get("presupuesto_referencial"),
-        "moneda": finanzas.get("moneda"),
-        "forma_pago": finanzas.get("forma_pago"),
-        "plazo_pago": finanzas.get("plazo_pago"),
-        "fuente_financiamiento": finanzas.get("fuente_financiamiento"),
-        "garantias": garantias_txt,
-        "multas": multas_txt,
-        "otros": str(finanzas.get("otros", "")),
-        "resumen": finanzas.get("resumen")
-    }
-
-    # Upsert logic manual
-    sql_update = """
-        UPDATE finanzas_licitacion
-        SET
-            presupuesto_referencial = %(presupuesto_referencial)s,
-            moneda = %(moneda)s,
-            forma_pago = %(forma_pago)s,
-            plazo_pago = %(plazo_pago)s,
-            fuente_financiamiento = %(fuente_financiamiento)s,
-            garantias = %(garantias)s,
-            multas = %(multas)s,
-            otros = %(otros)s,
-            resumen = %(resumen)s,
-            updated_at = now()
-        WHERE licitacion_id = %(licitacion_id)s
-    """
-
-    sql_insert = """
-        INSERT INTO finanzas_licitacion (
-            licitacion_id,
-            presupuesto_referencial,
-            moneda,
-            forma_pago,
-            plazo_pago,
-            fuente_financiamiento,
-            garantias,
-            multas,
-            otros,
-            resumen
-        ) VALUES (
-            %(licitacion_id)s,
-            %(presupuesto_referencial)s,
-            %(moneda)s,
-            %(forma_pago)s,
-            %(plazo_pago)s,
-            %(fuente_financiamiento)s,
-            %(garantias)s,
-            %(multas)s,
-            %(otros)s,
-            %(resumen)s
-        )
-    """
-
-    try:
-        with conn.cursor() as cur:
-            cur.execute(sql_update, valores)
-            if cur.rowcount == 0:
-                cur.execute(sql_insert, valores)
+                
+            # Guardar auditoría
+            if semantic_run_id:
+                for campo in ["presupuesto_referencial", "moneda", "forma_pago", "plazo_pago", "fuente_financiamiento", "garantias", "multas"]:
+                    guardar_auditoria(conn, licitacion_id, semantic_run_id, "FINANZAS_LICITACION", campo, finanzas.get(campo, {}))
+            
         conn.commit()
         print(f"[{now}] ✅ Finanzas persistidas correctamente | licitacion_id={licitacion_id}")
     except Exception:
@@ -497,31 +484,23 @@ def obtener_finanzas_por_licitacion(licitacion_id: str) -> dict | None:
         cur.close()
         conn.close()
 
-def actualizar_datos_basicos_licitacion(licitacion_id: str, datos: dict) -> None:
+def actualizar_datos_basicos_licitacion(licitacion_id: str, datos: dict, semantic_run_id: str = None) -> None:
     conn = get_pg_conn()
     cur = conn.cursor()
     try:
         update_fields = []
         update_values = []
+        
+        def _extract_val(payload):
+            if isinstance(payload, dict) and "valor" in payload:
+                return payload.get("valor")
+            return payload
 
-        # Mapeo de campos JSON a columnas DB
-        # datos viene del JSON extractor, puede tener claves distintas?
-        # Asumimos que el extractor usa las mismas keys o muy similares.
-        
-        # Extractor keys vs DB columns:
-        # titulo -> nombre
-        # descripcion -> descripcion
-        # organismo -> organismo_solicitante
-        # numero_licitacion -> codigo_licitacion
-        
         mapping = {
-            # "titulo": "nombre", # COMENTADO: No actualizar nombre/titulo para respetar el original
             "descripcion": "descripcion",
             "entidad_solicitante": "entidad_solicitante",
             "unidad_compra": "unidad_compra",
             "numero_licitacion": "codigo_licitacion",
-            # Si vienen ya con nombre de columna:
-            # "nombre": "nombre", # COMENTADO: No actualizar nombre para respetar el original
             "codigo_licitacion": "codigo_licitacion"
         }
 
@@ -529,15 +508,14 @@ def actualizar_datos_basicos_licitacion(licitacion_id: str, datos: dict) -> None
             col = mapping.get(key)
             if col and val:
                 update_fields.append(f"{col} = %s")
-                update_values.append(val)
+                update_values.append(_extract_val(val))
         
         # También estado si viniera
         if "estado" in datos:
             update_fields.append("estado_publicacion = %s")
-            update_values.append(datos["estado"])
+            update_values.append(_extract_val(datos["estado"]))
 
         if not update_fields:
-            # Si solo venia el nombre y lo ignoramos, puede quedar vacío
             print(f"⚠️ No hay campos para actualizar en datos básicos de {licitacion_id} (Nombre ignorado)")
             return
 
@@ -548,6 +526,14 @@ def actualizar_datos_basicos_licitacion(licitacion_id: str, datos: dict) -> None
             WHERE id = %s
         """
         cur.execute(query, tuple(update_values))
+        
+        if semantic_run_id:
+            for campo in mapping.keys():
+                if campo in datos:
+                    guardar_auditoria(conn, licitacion_id, semantic_run_id, "DATOS_BASICOS_LICITACION", mapping[campo], datos[campo])
+            if "estado" in datos:
+                guardar_auditoria(conn, licitacion_id, semantic_run_id, "DATOS_BASICOS_LICITACION", "estado_publicacion", datos["estado"])
+                
         conn.commit()
         print(f"✅ Datos básicos actualizados para {licitacion_id}")
     except Exception as e:

@@ -8,6 +8,7 @@ from src.nodes.finances.node import ExtractFinancesNode
 from src.nodes.items.node import ExtractItemsNode
 from src.nodes.basic_data.node import ExtractBasicDataNode
 from src.nodes.save.node import SaveNode
+from src.nodes.homologation.node import HomologationNode
 
 # Wrappers de ejecución
 def node_load_data(state: GraphState) -> GraphState: return LoadDataNode.execute(state)
@@ -15,6 +16,7 @@ def node_extract_finances(state: GraphState) -> GraphState: return ExtractFinanc
 def node_extract_items(state: GraphState) -> GraphState: return ExtractItemsNode.execute(state)
 def node_extract_basic_data(state: GraphState) -> GraphState: return ExtractBasicDataNode.execute(state)
 def node_save(state: GraphState) -> GraphState: return SaveNode.execute(state)
+def node_homologation(state: GraphState) -> GraphState: return HomologationNode.execute(state)
 
 def build_semantic_graph():
     workflow = StateGraph(GraphState)
@@ -25,6 +27,7 @@ def build_semantic_graph():
     workflow.add_node("extract_items", node_extract_items)
     workflow.add_node("extract_basic_data", node_extract_basic_data)
     workflow.add_node("save", node_save)
+    workflow.add_node("homologation", node_homologation)
 
     # Definir flujo
     workflow.set_entry_point("load_data")
@@ -35,12 +38,12 @@ def build_semantic_graph():
     workflow.add_edge("load_data", "extract_basic_data")
     
     # Convergencia ("fan-in") hacia Save
-    # LangGraph espera que todas las ramas terminen antes de ir a un nodo común si fluyen hacia él?
-    # En versiones recientes, simplemente se ejecutan.
     workflow.add_edge("extract_finances", "save")
     workflow.add_edge("extract_items", "save")
     workflow.add_edge("extract_basic_data", "save")
     
-    workflow.add_edge("save", END)
+    # Después de guardar, ejecutar homologación
+    workflow.add_edge("save", "homologation")
+    workflow.add_edge("homologation", END)
 
     return workflow.compile()

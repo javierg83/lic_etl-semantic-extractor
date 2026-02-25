@@ -21,13 +21,19 @@ de la licitación.
 CAMPOS A EXTRAER (JSON):
 ------------------------------
 
+Para cada campo debes retornar un OBJETO que contenga obligatoriamente:
+- "valor": El dato extraído según la definición. (Puede ser null)
+- "razonamiento": Breve justificación de por qué extrajiste ese valor.
+- "fuentes": Arreglo de objetos ({"documento": string, "pagina": int, "parrafo": string}) de donde sacaste el dato exactamente. Para 'documento', extrae el nombre desde el tag [ARCHIVO: <nombre>].
+
+Estructura esperada:
 {
-  "codigo_licitacion": string | null,
-  "nombre": string | null,
-  "descripcion": string | null,
-  "estado": string | null,
-  "entidad_solicitante": string | null,
-  "unidad_compra": string | null
+  "codigo_licitacion": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
+  "nombre": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
+  "descripcion": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
+  "estado": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
+  "entidad_solicitante": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
+  "unidad_compra": { "valor": string | null, "razonamiento": string, "fuentes": [...] }
 }
 
 ------------------------------

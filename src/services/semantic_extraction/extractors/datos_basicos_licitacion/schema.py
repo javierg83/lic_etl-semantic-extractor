@@ -70,12 +70,21 @@ def validate_datos_basicos_licitacion_schema(raw_output: str) -> dict:
     for key in expected_keys:
         data.setdefault(key, None)
 
-    # Validar tipos de datos
+    # Validar tipos de datos enriquecidos
     for key in expected_keys:
-        if data[key] is not None and not isinstance(data[key], str):
-            raise DatosBasicosLicitacionSchemaError(
-                f"Campo '{key}' debe ser string o null"
-            )
+        if data[key] is not None:
+            if not isinstance(data[key], dict):
+                raise DatosBasicosLicitacionSchemaError(
+                    f"Campo '{key}' debe ser un objeto con 'valor', 'razonamiento', 'fuentes'"
+                )
+            if "valor" not in data[key]:
+                raise DatosBasicosLicitacionSchemaError(
+                    f"Campo '{key}' carece del campo obligatorio 'valor'"
+                )
+            if data[key]["valor"] is not None and not isinstance(data[key]["valor"], str):
+                 raise DatosBasicosLicitacionSchemaError(
+                    f"El subcampo 'valor' en '{key}' debe ser string o null"
+                )
 
     logger.info(
         "[DATOS_BASICOS][SCHEMA] Validación OK | campos=%s",

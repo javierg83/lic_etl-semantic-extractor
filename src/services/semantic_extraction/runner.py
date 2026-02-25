@@ -148,8 +148,23 @@ def _semantic_search_in_memory(query: str, cached_chunks: List[Dict[str, Any]], 
 
 def _build_context(chunks: List[Dict[str, Any]]) -> str:
     bloques = []
+    import re
     for c in chunks:
-        bloques.append(f"[REDIS_KEY={c['redis_key']}]\n{c['texto']}")
+        redis_key = c['redis_key']
+        nombre_archivo = "Documento Desconocido"
+        try:
+            # Pattern: doc_raw_page:<lic_int>_<file_int>_<filename>:p<page>...
+            match = re.search(r"doc_raw_page:\d+_\d+_(.+?):p\d+", redis_key)
+            if match:
+                nombre_archivo = match.group(1)
+            else:
+                match_legacy = re.search(r"pdf:([^:]+):chunk", redis_key)
+                if match_legacy:
+                    nombre_archivo = match_legacy.group(1)
+        except Exception:
+            pass
+
+        bloques.append(f"[ARCHIVO: {nombre_archivo} | REDIS_KEY: {redis_key}]\n{c['texto']}")
     return "\n\n---\n\n".join(bloques)
 
 def _call_llm(prompt: str) -> str:
@@ -344,7 +359,7 @@ def run_semantic_extraction(
             
             if result.get("finanzas"):
                 try:
-                    guardar_finanzas_licitacion(conn, licitacion_id, result["finanzas"])
+                    guardar_finanzas_licitacion(conn, licitacion_id, result["finanzas"], semantic_run_id)
                     print(f"[{now}] ✅ Datos financieros guardados correctamente en BD")
                 except Exception as e:
                     print(f"[{now}] ❌ Error al guardar datos financieros: {str(e)}")
@@ -357,7 +372,8 @@ def run_semantic_extraction(
             if result.get("datos_basicos"):
                 actualizar_datos_basicos_licitacion(
                     licitacion_id,
-                    result.get("datos_basicos", {})
+                    result.get("datos_basicos", {}),
+                    semantic_run_id
                 )
     finally:
         conn.close()

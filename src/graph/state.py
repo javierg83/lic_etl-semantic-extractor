@@ -11,6 +11,7 @@ class GraphState(TypedDict):
     extraction_finances: Optional[Dict[str, Any]]
     extraction_items: Optional[Dict[str, Any]] # Changed to Dict as extractor returns wrapper with 'items' key
     extraction_basic_data: Optional[Dict[str, Any]]
+    homologation_result: Optional[Dict[str, Any]]
     status: str
     errors: Annotated[List[str], operator.add] # Accumulate errors from parallel branches
     current_step: str

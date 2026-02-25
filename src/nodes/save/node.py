@@ -8,7 +8,9 @@ class SaveNode(BaseNode):
         
         # Simulación de guardado
         print(f"   -> Finanzas guardadas: {state.get('extraction_finances')}")
-        print(f"   -> Ítems guardados: {len(state.get('extraction_items', []))} items")
+        
+        items = state.get('extraction_items') or []
+        print(f"   -> Ítems guardados: {len(items)} items")
         
         state["status"] = "completed"
         return state
