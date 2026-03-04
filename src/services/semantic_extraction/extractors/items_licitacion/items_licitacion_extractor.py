@@ -145,9 +145,13 @@ class ItemsLicitacionExtractor(BaseSemanticExtractor):
                 e,
                 cleaned_output,
             )
-            raise ItemsLicitacionSchemaError(
-                f"JSON inválido devuelto por el LLM: {e}"
-            )
+            return {
+                "concepto": self.concepto,
+                "resumen": {"observaciones": f"JSON inválido devuelto por el LLM: {e}"},
+                "items": [],
+                "especificaciones": [],
+                "warnings": [f"JSON Parse Error: {e}"],
+            }
 
         # -----------------------------
         # Logging estructural del JSON

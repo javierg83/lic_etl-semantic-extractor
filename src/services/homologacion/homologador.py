@@ -97,40 +97,62 @@ def homologar_productos_para_licitacion(
         for item in items_licitacion
     ]
 
-    logger.info("[HOMOLOGADOR] Items detectados para homologacion:")
+    logger.info("[HOMOLOGADOR] Items detectados para homologacion: %d", len(items_detectados))
     for idx, item in enumerate(items_detectados):
-        logger.info(f"  [{idx+1}] item_key={item['item_key']}")
+        logger.debug("  [%d] item_key=%s", idx+1, item['item_key'])
 
-    prompt = build_prompt_homologacion(items_detectados, productos_catalogo)
+    BATCH_SIZE = 10
+    total_homologaciones = []
+    total_tokens_input = 0
+    total_tokens_output = 0
 
-    logger.info("[HOMOLOGADOR] Enviando prompt al LLM | largo_prompt=%d", len(prompt))
+    total_batches = (len(items_detectados) + BATCH_SIZE - 1) // BATCH_SIZE
 
-    resultado_llm = run_llm_raw_with_tokens(prompt, overrides={"model": modelo})
+    for i in range(total_batches):
+        batch_items = items_detectados[i*BATCH_SIZE : (i+1)*BATCH_SIZE]
+        logger.info("[HOMOLOGADOR] Procesando Batch %d/%d (%d items)...", i+1, total_batches, len(batch_items))
 
-    respuesta_texto = resultado_llm.get("respuesta", "")
-    tokens_input = resultado_llm.get("tokens_input", 0)
-    tokens_output = resultado_llm.get("tokens_output", 0)
+        prompt = build_prompt_homologacion(batch_items, productos_catalogo)
+        logger.info("[HOMOLOGADOR] Enviando prompt al LLM | largo_prompt=%d", len(prompt))
 
-    logger.info(
-        "[HOMOLOGADOR] Respuesta LLM recibida | tokens_input=%d | tokens_output=%d",
-        tokens_input,
-        tokens_output
-    )
+        try:
+            resultado_llm = run_llm_raw_with_tokens(prompt, overrides={"model": modelo})
+            
+            respuesta_texto = resultado_llm.get("respuesta", "")
+            tokens_in = resultado_llm.get("tokens_input", 0)
+            tokens_out = resultado_llm.get("tokens_output", 0)
+            
+            total_tokens_input += tokens_in
+            total_tokens_output += tokens_out
 
-    try:
-        if respuesta_texto.startswith("```json"):
-            respuesta_texto = respuesta_texto[7:]
-        if respuesta_texto.startswith("```"):
-            respuesta_texto = respuesta_texto[3:]
-        if respuesta_texto.endswith("```"):
-            respuesta_texto = respuesta_texto[:-3]
-        respuesta_texto = respuesta_texto.strip()
+            logger.info(
+                "[HOMOLOGADOR] Respuesta LLM recibida Batch %d | tokens_input=%d | tokens_output=%d",
+                i+1, tokens_in, tokens_out
+            )
 
-        homologaciones = json.loads(respuesta_texto)
-    except json.JSONDecodeError as e:
-        logger.error("[HOMOLOGADOR] Error parseando respuesta LLM: %s", str(e))
-        logger.error("[HOMOLOGADOR] Respuesta raw: %s", respuesta_texto[:500])
-        homologaciones = []
+            if respuesta_texto.startswith("```json"):
+                respuesta_texto = respuesta_texto[7:]
+            if respuesta_texto.startswith("```"):
+                respuesta_texto = respuesta_texto[3:]
+            if respuesta_texto.endswith("```"):
+                respuesta_texto = respuesta_texto[:-3]
+            respuesta_texto = respuesta_texto.strip()
+
+            homologaciones_batch = json.loads(respuesta_texto)
+            if isinstance(homologaciones_batch, list):
+                total_homologaciones.extend(homologaciones_batch)
+            else:
+                logger.error("[HOMOLOGADOR] Respuesta LLM no es una lista en el Batch %d", i+1)
+        except json.JSONDecodeError as e:
+            logger.error("[HOMOLOGADOR] Error parseando respuesta LLM en Batch %d: %s", i+1, str(e))
+            logger.error("[HOMOLOGADOR] Respuesta raw Batch %d: %s", i+1, respuesta_texto[:500])
+        except Exception as e:
+            logger.error("[HOMOLOGADOR] Error inesperado en Batch %d: %s", i+1, str(e))
+            
+    # Asignamos a las variables originales para mantener la compatibilidad con el resto del codigo de guardado
+    homologaciones = total_homologaciones
+    tokens_input = total_tokens_input
+    tokens_output = total_tokens_output
 
     total_items_detectados = len(items_detectados)
     total_items_con_match = sum(1 for h in homologaciones if h.get("candidatos"))

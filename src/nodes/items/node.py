@@ -20,7 +20,7 @@ class ExtractItemsNode(BaseNode):
                 concepto="ITEMS_LICITACION",
                 documento_ids=documento_ids,
                 nombre_licitacion=f"lic_{licitacion_id}", 
-                top_k=50, 
+                top_k=1000, 
                 min_score=0.25
             )
             

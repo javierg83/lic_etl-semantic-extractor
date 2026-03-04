@@ -221,15 +221,116 @@ def run_semantic_extraction(
         print("[SEMANTIC] No se encontraron fragmentos relevantes (o cache vacia). continuando con contexto vacio.")
         # raise RuntimeError("No se encontraron fragmentos relevantes en Redis")
 
-    context = _build_context(list({c["redis_key"]: c for c in semantic_chunks}.values()))
-    print(f"[SEMANTIC] Contexto final tiene {len(context)} caracteres")
+    # DEDUPLICAR CHUNKS para evitar enviar filas repetidas múltiples veces
+    unique_chunks_dict = {}
+    for c in semantic_chunks:
+        k = c["redis_key"]
+        # Quedarse con el chunk con mejor distancia (menor)
+        if k not in unique_chunks_dict or c.get("distancia", 999.0) < unique_chunks_dict[k].get("distancia", 999.0):
+            unique_chunks_dict[k] = c
+    semantic_chunks = list(unique_chunks_dict.values())
 
-    print(f"[SEMANTIC] Ejecutando extractor.run()...")
-    # print("\n[DEBUG CONTEXT PREVIEW]\n")
-    # print(context[:4000])
-    # print("\n[END CONTEXT PREVIEW]\n")
+    # --- DEBUGGING LÓGICA: GuardarChunks para análisis ---
+    debug_log = {
+        "licitacion_id": licitacion_id,
+        "total_chunks_unicos": len(semantic_chunks),
+        "chunks": [{"key": c["redis_key"], "distancia": c.get("distancia")} for c in semantic_chunks],
+        "batches": []
+    }
+    # -----------------------------------------------------
 
-    result = extractor.run(context)
+    # REVISAR ORIGEN EXCEL PARA BATCHING
+    is_excel_batch_mode = False
+    if concepto == "ITEMS_LICITACION" and len(semantic_chunks) > 0:
+        excel_chunks = [c for c in semantic_chunks if ".xlsx" in c["redis_key"]]
+        if len(excel_chunks) > 20: # Heurística: Si hay más de 20 filas de Excel, batching
+            is_excel_batch_mode = True
+
+    if is_excel_batch_mode:
+        print(f"[SEMANTIC] 📦 Activando MODO BATCH (Excel detectado) para {len(semantic_chunks)} chunks totales.")
+        BATCH_SIZE = 15
+        all_items = []
+        all_especificaciones = []
+        all_warnings = []
+        combined_resumen = {"observaciones": "Procesamiento en lotes.", "total_items_detectados": 0}
+        
+        # Opcional: Solo procesar los de excel en batch o todos. Lo más seguro es mandar todos en chunks secuenciales.
+        # Ordenamos los chunks para mantener la secuencia
+        semantic_chunks.sort(key=lambda x: x["redis_key"])
+        
+        total_batches = (len(semantic_chunks) + BATCH_SIZE - 1) // BATCH_SIZE
+        
+        for i in range(total_batches):
+            batch_chunks = semantic_chunks[i*BATCH_SIZE : (i+1)*BATCH_SIZE]
+            print(f"[SEMANTIC] 📦 Procesando Batch {i+1}/{total_batches} ({len(batch_chunks)} chunks)...")
+            
+            context = _build_context(list({c["redis_key"]: c for c in batch_chunks}.values()))
+            try:
+                # Resetear el flag _has_run del extractor para permitir múltiples pasadas en batch
+                extractor._has_run = False
+                batch_result = extractor.run(context)
+                
+                # Consolidar resultados
+                items_generados = batch_result.get("items") or []
+                all_items.extend(items_generados)
+                all_especificaciones.extend(batch_result.get("especificaciones") or [])
+                all_warnings.extend(batch_result.get("warnings") or [])
+                
+                print(f"   └─ Extraídos {len(items_generados)} ítems en este batch.")
+                
+                # --- DEBUGGING LÓGICA ---
+                debug_log["batches"].append({
+                    "batch_num": i + 1,
+                    "chunks_enviados": len(batch_chunks),
+                    "items_extraidos_llm": len(items_generados),
+                    "items_names": [it.get("nombre_item") for it in items_generados]
+                })
+                # ------------------------
+                
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                print(f"   ❌ Error en Batch {i+1}: {e}")
+                
+        # --- DEBUGGING LÓGICA: Guardar archivo ---
+        import time
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        debug_filename = f"salida_json/debug_excel_truncation_{ts}.json"
+        os.makedirs("salida_json", exist_ok=True)
+        with open(debug_filename, "w", encoding="utf-8") as f:
+            json.dump(debug_log, f, indent=2, ensure_ascii=False)
+        print(f"[SEMANTIC] 📝 Log de debug guardado en {debug_filename}")
+        # -----------------------------------------
+        
+        # Construir resultado maestro
+        result = {
+            "concepto": concepto,
+            "resumen": {
+                "observaciones": f"Lotes iterativos completados. Obtenidos {len(all_items)} ítems.",
+                "total_items_detectados": len(all_items)
+            },
+            "items": all_items,
+            "especificaciones": all_especificaciones,
+            "warnings": all_warnings
+        }
+        
+        print(f"[SEMANTIC] 📦 MODO BATCH FINALIZADO. Total ítems extraídos combinados: {len(all_items)}")
+
+    else:
+        # LÓGICA ESTÁNDAR ORIGINAL
+        # Protegemos contra exceso de tokens en PDFs limitando a los 80 mejores fragmentos
+        semantic_chunks.sort(key=lambda x: x.get("distancia", 999.0))
+        safe_chunks = semantic_chunks[:80]
+        
+        context = _build_context(safe_chunks)
+        print(f"[SEMANTIC] Contexto final tiene {len(context)} caracteres (limitado a {len(safe_chunks)} chunks para seguridad)")
+    
+        print(f"[SEMANTIC] Ejecutando extractor.run()...")
+        # print("\n[DEBUG CONTEXT PREVIEW]\n")
+        # print(context[:4000])
+        # print("\n[END CONTEXT PREVIEW]\n")
+    
+        result = extractor.run(context)
 
     try:
         _guardar_json_en_disco(nombre_licitacion, concepto, result)
