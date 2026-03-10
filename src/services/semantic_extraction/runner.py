@@ -46,7 +46,7 @@ def _get_pg_conn():
         raise RuntimeError("DATABASE_URL no está definido en el entorno")
     return psycopg2.connect(DATABASE_URL)
 
-def _load_documents_to_memory(documento_ids: List[str]) -> List[Dict[str, Any]]:
+def load_documents_to_memory(documento_ids: List[str]) -> List[Dict[str, Any]]:
     """
     Carga TODOS los chunks de los documentos solicitados en memoria RAM.
     Optimización: Evita ir a Redis por cada query.
@@ -58,22 +58,34 @@ def _load_documents_to_memory(documento_ids: List[str]) -> List[Dict[str, Any]]:
     for doc_id in documento_ids:
         # Intentar patrón 1: "doc_raw_page:{doc_id}:*_full" (Legacy / Semantic Loader)
         patterns = [
-            f"doc_raw_page:{doc_id}:*", # Match genérico para cualquier chunk (full, element, etc) con ese ID base
+            f"doc_raw_page:{doc_id}*", # Match más amplio para capturar suffix como ':p1_full' o '_page1'
             f"pdf:{doc_id}:chunk:*"  # Pattern legacy
         ]
         
         found_any = False
         for pattern in patterns:
-            # Usamos scan_iter para no bloquear
-            for key in redis_client.scan_iter(match=pattern):
-                found_any = True
-                data = redis_client.hgetall(key)
+            # En lugar de scan_iter (que puede ser muy lento por red en bases grandes),
+            # intentamos un keys directo si el patrón es muy restrictivo
+            keys = redis_client.keys(pattern)
+            if not keys:
+                continue
+                
+            found_any = True
+            
+            # Usar pipeline para traer todos los hgetall de golpe
+            pipe = redis_client.pipeline()
+            # Convert bytes to string if keys are bytes
+            decoded_keys = [k.decode() if isinstance(k, bytes) else k for k in keys]
+            
+            for key in decoded_keys:
+                pipe.hgetall(key)
+                
+            resultados_pipe = pipe.execute()
+            
+            for key, data in zip(decoded_keys, resultados_pipe):
                 if not data:
                     continue
                 try:
-                    # Adaptarse a si viene como bytes o string (redis decode_responses=False/True)
-                    # En este runner redis_client se crea con default (bytes) excepto si se cambia
-                    
                     emb_bytes = data.get(b"vector") or data.get(b"embedding") or b"[]"
                     texto_bytes = data.get(b"text") or data.get(b"texto") or b""
                     
@@ -94,21 +106,21 @@ def _load_documents_to_memory(documento_ids: List[str]) -> List[Dict[str, Any]]:
                     emb = json.loads(emb_str)
                     
                     cached_chunks.append({
-                        "redis_key": key.decode() if isinstance(key, bytes) else key,
+                        "redis_key": key,
                         "texto": texto_str,
                         "embedding": np.array(emb, dtype=np.float32)
                     })
                 except Exception as e:
-                    print(f"[⚠️] Error cargando clave Redis {key}: {e}")
+                    print(f"[⚠️] Error procesando pipeline Redis para la clave {key}: {e}")
                     continue
             
             if found_any:
-                print(f"[CACHE] Encontrados chunks con patrón: {pattern}")
+                print(f"[CACHE] Encontrados {len(decoded_keys)} chunks con patrón: {pattern}")
     
     print(f"[CACHE] Total chunks cargados en RAM: {len(cached_chunks)}")
     return cached_chunks
 
-def _semantic_search_in_memory(query: str, cached_chunks: List[Dict[str, Any]], top_k: int, min_score: float) -> List[Dict[str, Any]]:
+def semantic_search_in_memory(query: str, cached_chunks: List[Dict[str, Any]], top_k: int, min_score: float) -> List[Dict[str, Any]]:
     import numpy as np
 
     print(f"[magnifier] Generando embedding para query: {query}")
@@ -146,7 +158,7 @@ def _semantic_search_in_memory(query: str, cached_chunks: List[Dict[str, Any]], 
 
     return finales
 
-def _build_context(chunks: List[Dict[str, Any]]) -> str:
+def build_context(chunks: List[Dict[str, Any]]) -> str:
     bloques = []
     import re
     for c in chunks:
@@ -204,7 +216,7 @@ def run_semantic_extraction(
     extractor.extractor_version = extractor_version
 
     # --- OPTIMIZACIÓN: Cargar cache una sola vez ---
-    cached_chunks = _load_documents_to_memory(documento_ids)
+    cached_chunks = load_documents_to_memory(documento_ids)
     if not cached_chunks:
          print(f"[SEMANTIC] ⚠️ No se cargaron chunks en memoria. Posiblemente doc_id incorrecto o vacío.")
 
@@ -213,7 +225,7 @@ def run_semantic_extraction(
     
     for query in queries:
         # Usar la búsqueda en memoria optimizada
-        filtros = _semantic_search_in_memory(query, cached_chunks, top_k, min_score)
+        filtros = semantic_search_in_memory(query, cached_chunks, top_k, min_score)
         semantic_chunks.extend(filtros)
 
     if not semantic_chunks:
@@ -239,32 +251,50 @@ def run_semantic_extraction(
     }
     # -----------------------------------------------------
 
-    # REVISAR ORIGEN EXCEL PARA BATCHING
-    is_excel_batch_mode = False
+    # REVISAR Y APLICAR BATCHING DINÁMICO (Por longitud de texto)
+    is_batch_mode = False
     if concepto == "ITEMS_LICITACION" and len(semantic_chunks) > 0:
-        excel_chunks = [c for c in semantic_chunks if ".xlsx" in c["redis_key"]]
-        if len(excel_chunks) > 20: # Heurística: Si hay más de 20 filas de Excel, batching
-            is_excel_batch_mode = True
+        is_batch_mode = True
 
-    if is_excel_batch_mode:
-        print(f"[SEMANTIC] 📦 Activando MODO BATCH (Excel detectado) para {len(semantic_chunks)} chunks totales.")
-        BATCH_SIZE = 15
+    if is_batch_mode:
+        print(f"[SEMANTIC] 📦 Activando MODO BATCH DINÁMICO para {len(semantic_chunks)} chunks totales.")
+        
         all_items = []
         all_especificaciones = []
         all_warnings = []
         combined_resumen = {"observaciones": "Procesamiento en lotes.", "total_items_detectados": 0}
         
-        # Opcional: Solo procesar los de excel en batch o todos. Lo más seguro es mandar todos en chunks secuenciales.
-        # Ordenamos los chunks para mantener la secuencia
-        semantic_chunks.sort(key=lambda x: x["redis_key"])
+        # Ordenamos los chunks para mantener la secuencia o relevancia
+        semantic_chunks.sort(key=lambda x: x.get("distancia", 999.0))
         
-        total_batches = (len(semantic_chunks) + BATCH_SIZE - 1) // BATCH_SIZE
+        MAX_CHARS_PER_BATCH = 12000  # Estimación segura para no saturar el LLM
+        MAX_CHUNKS_PER_BATCH = 50    # Límite adicional para evitar "pereza" por exceso de instrucciones
         
-        for i in range(total_batches):
-            batch_chunks = semantic_chunks[i*BATCH_SIZE : (i+1)*BATCH_SIZE]
+        batches = []
+        current_batch = []
+        current_chars = 0
+        
+        for chunk in semantic_chunks:
+            chunk_len = len(chunk.get("texto", ""))
+            
+            # Condición Mixta: Cortar el lote si excedemos caracteres o si alcanzamos el tope de chunks
+            if (current_chars + chunk_len > MAX_CHARS_PER_BATCH or len(current_batch) >= MAX_CHUNKS_PER_BATCH) and current_batch:
+                batches.append(current_batch)
+                current_batch = [chunk]
+                current_chars = chunk_len
+            else:
+                current_batch.append(chunk)
+                current_chars += chunk_len
+                
+        if current_batch:
+            batches.append(current_batch)
+
+        total_batches = len(batches)
+        
+        for i, batch_chunks in enumerate(batches):
             print(f"[SEMANTIC] 📦 Procesando Batch {i+1}/{total_batches} ({len(batch_chunks)} chunks)...")
             
-            context = _build_context(list({c["redis_key"]: c for c in batch_chunks}.values()))
+            context = build_context(list({c["redis_key"]: c for c in batch_chunks}.values()))
             try:
                 # Resetear el flag _has_run del extractor para permitir múltiples pasadas en batch
                 extractor._has_run = False
@@ -295,7 +325,7 @@ def run_semantic_extraction(
         # --- DEBUGGING LÓGICA: Guardar archivo ---
         import time
         ts = time.strftime("%Y%m%d_%H%M%S")
-        debug_filename = f"salida_json/debug_excel_truncation_{ts}.json"
+        debug_filename = f"salida_json/debug_batching_{ts}.json"
         os.makedirs("salida_json", exist_ok=True)
         with open(debug_filename, "w", encoding="utf-8") as f:
             json.dump(debug_log, f, indent=2, ensure_ascii=False)
@@ -306,7 +336,7 @@ def run_semantic_extraction(
         result = {
             "concepto": concepto,
             "resumen": {
-                "observaciones": f"Lotes iterativos completados. Obtenidos {len(all_items)} ítems.",
+                "observaciones": f"Lotes dinámicos completados ({total_batches} llamadas). Obtenidos {len(all_items)} ítems.",
                 "total_items_detectados": len(all_items)
             },
             "items": all_items,
@@ -317,19 +347,14 @@ def run_semantic_extraction(
         print(f"[SEMANTIC] 📦 MODO BATCH FINALIZADO. Total ítems extraídos combinados: {len(all_items)}")
 
     else:
-        # LÓGICA ESTÁNDAR ORIGINAL
-        # Protegemos contra exceso de tokens en PDFs limitando a los 80 mejores fragmentos
+        # LÓGICA ESTÁNDAR ORIGINAL P/ OTROS CONCEPTOS NO ITEMS
         semantic_chunks.sort(key=lambda x: x.get("distancia", 999.0))
         safe_chunks = semantic_chunks[:80]
         
-        context = _build_context(safe_chunks)
+        context = build_context(safe_chunks)
         print(f"[SEMANTIC] Contexto final tiene {len(context)} caracteres (limitado a {len(safe_chunks)} chunks para seguridad)")
     
         print(f"[SEMANTIC] Ejecutando extractor.run()...")
-        # print("\n[DEBUG CONTEXT PREVIEW]\n")
-        # print(context[:4000])
-        # print("\n[END CONTEXT PREVIEW]\n")
-    
         result = extractor.run(context)
 
     try:

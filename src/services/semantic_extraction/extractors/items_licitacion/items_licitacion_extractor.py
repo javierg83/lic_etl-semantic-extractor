@@ -25,8 +25,6 @@ PROMPT_VERSION = "v3"
 def clean_json_output(text: str) -> str:
     """
     Limpia un bloque de texto que puede estar envuelto en ```json ... ```
-    y normaliza comillas raras. Además, intenta escapar comillas dobles
-    no escapadas que estén en el medio de un texto (ej. medidas como 2").
     """
     if not text or not isinstance(text, str):
         return ""
@@ -36,20 +34,6 @@ def clean_json_output(text: str) -> str:
     # Eliminar fences tipo ```json ... ```
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
-
-    # Normalizar comillas “raras”
-    text = (
-        text.replace("“", "\"")
-            .replace("”", "\"")
-            .replace("‘", "'")
-            .replace("’", "'")
-    )
-    
-    # Intento heurístico de sanitizar comillas no escapadas usadas para pulgadas (ej. 2")
-    # Busca un dígito seguido de una comilla doble y luego un carácter que no sea coma ni llave de cierre,
-    # y reemplaza la comilla por la forma escapada.
-    # Expresión: (?<=\d)"(?!\s*[:,\]}]) -> \\"
-    text = re.sub(r'(?<=\d)"(?!\s*[:,\]}])', r'\\"', text)
 
     return text.strip()
 
@@ -127,6 +111,19 @@ class ItemsLicitacionExtractor(BaseSemanticExtractor):
         logger.debug("[ITEMS] Raw output LLM completo:\n%s", raw_output)
 
         cleaned_output = clean_json_output(raw_output)
+
+        # [DEBUG] Volcar raw prompt and response a archivo
+        try:
+            import os
+            import time
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            debug_dir = os.path.join(os.getcwd(), "debug_semantic")
+            os.makedirs(debug_dir, exist_ok=True)
+            debug_file = os.path.join(debug_dir, f"raw_semantic_{ts}.json")
+            with open(debug_file, "w", encoding="utf-8") as f:
+                json.dump({"raw_output": raw_output, "cleaned_output": cleaned_output}, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error("Error writing debug semantic json: %s", e)
 
         if not cleaned_output:
             logger.error("[ITEMS] Salida LLM vacía tras limpieza")

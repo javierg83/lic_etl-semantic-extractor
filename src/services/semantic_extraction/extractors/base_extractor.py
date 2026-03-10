@@ -168,7 +168,7 @@ class BaseSemanticExtractor(ABC):
 
         # LLM
         logger.info("[SEMANTIC][%s] Ejecutando LLM", self.concepto)
-        raw_output = run_llm_raw(prompt)
+        raw_output = run_llm_raw(prompt, licitacion_id=self.licitacion_id)
 
         if not raw_output:
             logger.error("[SEMANTIC][%s] Salida vacia del LLM", self.concepto)

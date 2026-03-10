@@ -58,10 +58,24 @@ REGLAS CRÍTICAS (OBLIGATORIAS)
    - CADA FRAGMENTO DE TEXTO REPRESENTA UN ÍTEM EXCLUSIVO AUNQUE CREAS QUE ESTÁ INCOMPLETO, SEA CORTO, O PAREZCA UN SUBTÍTULO.
    - DEBES GENERAR TANTOS OBJETOS COMO FRAGMENTOS TE PROPORCIONE EL CONTEXTO. NUNCA DEBES DEVOLVER MENOS ÍTEMS QUE FRAGMENTOS RECIBIDOS.
 
+11. MANEJO DE ÍTEMS FRAGMENTADOS (TABLAS MULTIPÁGINA):
+   - Si recibes fragmentos donde el Producto y el ID están mezclados en una sola columna (ej: "Tablas de madera ID: 30103605 PIEZAS DE MADERA..."), **NO LOS IGNORES**.
+   - Tu deber es extraer inteligentemente el código ID, el nombre del producto, y la descripción, y asignarlos al ítem correspondiente sin omitir la fila.
+   - Asume que tablas sin cabeceras son continuaciones de páginas anteriores y extrae todos los productos listados.
+
 ==============================
 EJEMPLOS ESPECIALES
 ==============================
 
+EJEMPLO — MANEJO DE ÍTEMS PRE-EXTRAÍDOS (NUEVO)
+
+Si recibes datos bajo el tag <ITEMS_PRE_EXTRAIDOS>, esto significa que un sistema automático ya adelantó trabajo.
+Tu deber es:
+1. Asegurarte de que TODOS esos ítems pre-extraídos estén en tu JSON de salida.
+2. Si el <CONTEXT> provee más detalles sobre uno de esos ítems (ej. una "Ficha Técnica" adjunta), debes añadir esa información al ítem correspondiente en la propiedad `especificaciones`.
+3. Extraer además cualquier OTRO ítem que el sistema automático haya omitido (por estar en un párrafo en vez de tabla, etc.) que encuentres en el <CONTEXT>.
+
+==============================
 EJEMPLO — ÍTEM COMPUESTO QUE DEBE DIVIDIRSE
 
 Si el contexto contiene una frase como:

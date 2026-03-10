@@ -22,7 +22,7 @@ def _guardar_llm_raw_json(raw_text: str, tag: str = "llm_response"):
     print(f"[🧪 DEBUG] Respuesta LLM cruda guardada en: {filename}")
 
 
-def run_llm_raw(prompt_path_or_text: str, overrides: dict = None) -> str:
+def run_llm_raw(prompt_path_or_text: str, overrides: dict = None, licitacion_id: str = "default", action: str = "EXTRACCION_SEMANTICA") -> str:
     """
     Ejecuta una llamada al LLM. 
     Argumento 'prompt_path_or_text': 
@@ -78,10 +78,21 @@ def run_llm_raw(prompt_path_or_text: str, overrides: dict = None) -> str:
     print(f"[llm_service] ✅ Respuesta recibida. Tokens: {usage}")
     _guardar_llm_raw_json(reply, tag="generic_response")
 
+    # Registrar uso de tokens
+    from src.utils.metrics import log_ai_usage
+    log_ai_usage(
+        licitacion_id=licitacion_id,
+        action=action,
+        provider=config_dict.get('engine', 'openai'),
+        model=config_dict.get('model', 'gpt-4o'),
+        input_tokens=usage.get("input", 0),
+        output_tokens=usage.get("output", 0)
+    )
+
     return reply.strip()
 
 
-def run_llm_raw_with_tokens(prompt_path_or_text: str, overrides: dict = None) -> dict:
+def run_llm_raw_with_tokens(prompt_path_or_text: str, overrides: dict = None, licitacion_id: str = "default", action: str = "EXTRACCION_SEMANTICA") -> dict:
     """
     Versión que retorna también los tokens.
     """
@@ -122,6 +133,17 @@ def run_llm_raw_with_tokens(prompt_path_or_text: str, overrides: dict = None) ->
     )
     
     _guardar_llm_raw_json(reply, tag="generic_response")
+
+    # Registrar uso de tokens
+    from src.utils.metrics import log_ai_usage
+    log_ai_usage(
+        licitacion_id=licitacion_id,
+        action=action,
+        provider=config_dict.get('engine', 'openai'),
+        model=config_dict.get('model', 'gpt-4o'),
+        input_tokens=usage.get("input", 0),
+        output_tokens=usage.get("output", 0)
+    )
 
     return {
         "respuesta": reply.strip(),

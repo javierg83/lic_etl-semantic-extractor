@@ -116,7 +116,7 @@ def homologar_productos_para_licitacion(
         logger.info("[HOMOLOGADOR] Enviando prompt al LLM | largo_prompt=%d", len(prompt))
 
         try:
-            resultado_llm = run_llm_raw_with_tokens(prompt, overrides={"model": modelo})
+            resultado_llm = run_llm_raw_with_tokens(prompt, overrides={"model": modelo}, licitacion_id=licitacion_id, action="HOMOLOGAR_ITEMS")
             
             respuesta_texto = resultado_llm.get("respuesta", "")
             tokens_in = resultado_llm.get("tokens_input", 0)

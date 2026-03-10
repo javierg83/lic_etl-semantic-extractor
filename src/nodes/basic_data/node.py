@@ -14,11 +14,20 @@ class ExtractBasicDataNode(BaseNode):
 
         print(f"📋 [ExtractBasicDataNode] Ejecutando extracción de Datos Básicos para licitacion_id={licitacion_id}")
         
+        import re
+        internal_doc_prefixes = []
+        for raw in documento_ids:
+            match = re.match(r"^(\d+_\d+)", str(raw))
+            if match:
+                internal_doc_prefixes.append(match.group(1))
+            else:
+                internal_doc_prefixes.append(raw)
+                
         try:
             result = run_semantic_extraction(
                 licitacion_id=licitacion_id,
                 concepto="DATOS_BASICOS_LICITACION",
-                documento_ids=documento_ids,
+                documento_ids=internal_doc_prefixes if internal_doc_prefixes else documento_ids,
                 nombre_licitacion=f"lic_{licitacion_id}",
                 top_k=15, 
                 min_score=0.3

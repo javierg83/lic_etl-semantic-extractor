@@ -23,7 +23,8 @@ class OpenAIProvider(BaseAIProvider):
         resp = self.client.chat.completions.create(
             model=model,
             messages=messages,
-            temperature=temperature
+            temperature=temperature,
+            max_tokens=config.get("max_tokens", 15000)
         )
 
         reply = resp.choices[0].message.content
