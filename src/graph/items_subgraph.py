@@ -11,6 +11,31 @@ class ItemsSubGraphState(TypedDict):
     final_items_result: Dict[str, Any]
     errors: Annotated[List[str], operator.add]
 
+# --- Shared Configuration ---
+UNIDADES_MAP = {
+    "EA": "Unidades",
+    "UN": "Unidades",
+    "UND": "Unidades",
+    "BX": "Cajas",
+    "CJ": "Cajas",
+    "PAQ": "Paquetes",
+    "BG": "Bolsas",
+    "VI": "Frascos",
+    "AMP": "Ampollas",
+    "CMP": "Comprimidos",
+    "SET": "Set",
+    "KIT": "Kit",
+    "PACK": "Pack",
+    "GR": "Gramos",
+    "KG": "Kilogramos",
+    "ML": "Mililitros",
+    "LT": "Litros",
+    "M": "Metros",
+    "M2": "Metros Cuadrados",
+    "M3": "Metros Cúbicos",
+    "000": "Millar / Adhesivo"
+}
+
 # --- Nodes ---
 def node_semantic_locator(state: ItemsSubGraphState) -> ItemsSubGraphState:
     print(f" [ItemsSubGraph] Ejecutando SemanticLocatorNode...")
@@ -67,26 +92,64 @@ def node_semantic_locator(state: ItemsSubGraphState) -> ItemsSubGraphState:
     all_chunks.sort(key=get_sort_key)
     print(f"   -- Total chunks unicos ordenados logicamente: {len(all_chunks)}")
     
-    with open("debug_chunks_dump.txt", "w", encoding="utf-8") as f:
-        f.write(f"Chunks from Memory: {len(cached_chunks)}\n")
-        f.write(f"Chunks after Search: {len(semantic_chunks)}\n")
-        f.write(f"Chunks after Dedupe: {len(all_chunks)}\n\n")
-        from src.services.semantic_extraction.runner import build_context
-        test_cx = build_context(all_chunks)
-        f.write("=== CONTEXT PREVIEW ===\n")
-        f.write(test_cx[:2000] + "\n========================\n")
-    
     return {"semantic_chunks": all_chunks}
 
 def node_format_parser(state: ItemsSubGraphState) -> ItemsSubGraphState:
     print(f" [ItemsSubGraph] Ejecutando FormatParserRouterNode...")
     semantic_chunks = state.get("semantic_chunks", [])
-    print(f"   -- DEBUG: FormatParser recibio {len(semantic_chunks)} chunks.")
     
     if not semantic_chunks:
         print(f"   -- No hay chunks semanticos. Saltando parser.")
         return {"pre_extracted_items": []}
         
+    import json
+    
+    # 1. Intentar extracción prioritaria desde JSON (Ficha Compra Agil)
+    items_json = []
+    json_found = False
+    
+    for chunk in semantic_chunks:
+        redis_key = chunk.get("redis_key", "")
+        if ".json" in redis_key.lower():
+            try:
+                print(f"   -- Encontrado chunk de JSON: {redis_key}")
+                data = json.loads(chunk["texto"])
+                
+                payload = data.get("payload") if isinstance(data, dict) else None
+                productos = []
+                if payload and isinstance(payload, dict):
+                    productos = payload.get("productos_solicitados", [])
+                elif isinstance(data, list):
+                    productos = data 
+                elif isinstance(data, dict) and "productos_solicitados" in data:
+                    productos = data["productos_solicitados"]
+                
+                if productos:
+                    json_found = True
+                    for i, p in enumerate(productos):
+                        u_code = p.get("unidad_medida") or p.get("unidad") or "N/A"
+                        u_text = UNIDADES_MAP.get(u_code, u_code)
+
+                        item_base = {
+                            "item_key": f"json_{i+1}",
+                            "nombre_item": p.get("nombre") or p.get("nombre_producto"),
+                            "cantidad": p.get("cantidad"),
+                            "unidad": u_text,
+                            "descripcion": p.get("descripcion"),
+                            "codigo_producto": p.get("codigo_producto"),
+                            "fuente_resumen": "JSON Oficial (Mercado Público)"
+                        }
+                        items_json.append(item_base)
+                    
+                    print(f"   -- ✅ Extraídos {len(items_json)} ítems literales del JSON.")
+                    break
+            except Exception as e:
+                print(f"   -- ⚠️ Error parseando JSON de chunk {redis_key}: {e}")
+
+    if json_found and items_json:
+        return {"pre_extracted_items": items_json}
+        
+    # 3. Fallback a parser determinístico
     from src.services.semantic_extraction.extractors.items_licitacion.items_licitacion_stateful_parser import ItemsLicitacionStatefulParser
     
     parser = ItemsLicitacionStatefulParser()
@@ -106,36 +169,24 @@ def node_llm_verification(state: ItemsSubGraphState) -> ItemsSubGraphState:
     licitacion_id = state.get("licitacion_id")
     semantic_chunks = state.get("semantic_chunks", [])
     pre_extracted_items = state.get("pre_extracted_items", [])
-    print(f"   -- DEBUG: LLMVerification recibio {len(semantic_chunks)} chunks y {len(pre_extracted_items)} items.")
     
     extractor_cls = get_extractor("ITEMS_LICITACION")
     extractor = extractor_cls(licitacion_id=licitacion_id)
     
-    # Construir Contexto
     context = build_context(semantic_chunks)
-    print(f"   -- DEBUG: Contexto construido con longitud {len(context)} caracteres.")
     
-    # Agregar items pre-extraídos al contexto para que el LLM los vea
     if pre_extracted_items:
         context += f"\n\n==============================\n<ITEMS_PRE_EXTRAIDOS>\n"
         context += json.dumps(pre_extracted_items, indent=2, ensure_ascii=False)
         context += f"\n</ITEMS_PRE_EXTRAIDOS>\n==============================\n"
         
     try:
-        # LLM run
         result = extractor.run(context)
         print(f"   -- LLM devolvio {len(result.get('items', []))} items consolidados.")
         
-        # Opcional: Persistir el resultado a DB usando la misma lógica de runner.py 
-        # (Idealmente movemos esto a node_save, pero temporalmente simulamos la persistencia aquí 
-        # para no romper el flujo de semantic_runs)
         from src.services.semantic_extraction.runner import _guardar_json_en_disco, _get_pg_conn, MODO_DEBUG
         from src.services.licitacion_service import guardar_items_licitacion, guardar_especificaciones_tecnicas
-        import os
-        from datetime import datetime
-        import traceback
         
-        # Try persistence logic block from runner.py
         try:
             nombre_licitacion = f"lic_{licitacion_id}"
             _guardar_json_en_disco(nombre_licitacion, "ITEMS_LICITACION", result)
@@ -150,18 +201,15 @@ def node_llm_verification(state: ItemsSubGraphState) -> ItemsSubGraphState:
                     
                     cur.execute("INSERT INTO semantic_results (semantic_run_id, concepto, resultado_json) VALUES (%s, %s, %s)", (run_id, "ITEMS_LICITACION", json.dumps(result)))
                     
-                    # Evidencias
                     for c in semantic_chunks:
                         cur.execute("INSERT INTO semantic_evidences (semantic_run_id, redis_key, texto_fragmento, score_similitud) VALUES (%s, %s, %s, %s)", (run_id, c["redis_key"], c["texto"], c.get("distancia")))
                     
-                    # Guardar estructuradamente items en Base de Datos de la aplicación
                     if "items" in result and result["items"]:
                         guardar_items_licitacion(conn, licitacion_id, str(run_id), result["items"])
                         guardar_especificaciones_tecnicas(conn, str(run_id), result.get("especificaciones_tecnicas", []))
 
                     conn.commit()
                     result["semantic_run_id"] = str(run_id)
-                    print("   -- Extraccion semantica hibrida persistida correctamente")
                 except Exception as e:
                     conn.rollback()
                     print(f" Error DB Persistencia: {e}")

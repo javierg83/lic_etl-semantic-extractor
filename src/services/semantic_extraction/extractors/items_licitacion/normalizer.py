@@ -97,6 +97,10 @@ def normalize_items_licitacion(
 
         tiene_descripcion_tecnica = bool(descripcion.strip()) and len(especificaciones) > 0
 
+        # Fase de rescate desactivada por solicitud de fidelidad absoluta al documento original
+        # if not unidad and descripcion:
+        #     ...
+
         item_row = {
             "licitacion_id": licitacion_id,
             "semantic_run_id": semantic_run_id,

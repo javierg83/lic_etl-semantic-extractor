@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # CONFIGURACIÓN DE PROMPT
 # ==========================================================
 
-PROMPT_VERSION = "v3"
+PROMPT_VERSION = "v4"
 
 
 def clean_json_output(text: str) -> str:

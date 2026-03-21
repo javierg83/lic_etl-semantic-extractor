@@ -19,6 +19,7 @@ from src.services.homologacion.homologacion_db import (
     insertar_homologacion_producto,
     insertar_candidato_homologacion,
 )
+from src.services.homologacion.catalog_filter import filter_catalog
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +113,11 @@ def homologar_productos_para_licitacion(
         batch_items = items_detectados[i*BATCH_SIZE : (i+1)*BATCH_SIZE]
         logger.info("[HOMOLOGADOR] Procesando Batch %d/%d (%d items)...", i+1, total_batches, len(batch_items))
 
-        prompt = build_prompt_homologacion(batch_items, productos_catalogo)
-        logger.info("[HOMOLOGADOR] Enviando prompt al LLM | largo_prompt=%d", len(prompt))
+        # --- NUEVO: Filtrar catálogo para este batch para evitar exceso de tokens ---
+        productos_relevantes = filter_catalog(batch_items, productos_catalogo, top_n=120)
+
+        prompt = build_prompt_homologacion(batch_items, productos_relevantes)
+        logger.info("[HOMOLOGADOR] Enviando prompt al LLM | largo_prompt=%d | productos_enviados=%d", len(prompt), len(productos_relevantes))
 
         try:
             resultado_llm = run_llm_raw_with_tokens(prompt, overrides={"model": modelo}, licitacion_id=licitacion_id, action="HOMOLOGAR_ITEMS")

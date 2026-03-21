@@ -79,7 +79,8 @@ class ItemsLicitacionStatefulParser:
                 continue
 
             # Detectar inicio de sección útil (Específico para formatos conocidos como Compra Ágil)
-            if "Listado de productos solicitados" in linea:
+            headers_items = ["Listado de productos solicitados", "Productos Solicitados", "Descripción de los bienes", "Ítems de la licitación"]
+            if any(h in linea for h in headers_items):
                 self.en_seccion_relevante = True
                 continue
 
