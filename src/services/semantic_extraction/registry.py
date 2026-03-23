@@ -46,6 +46,11 @@ from src.services.semantic_extraction.extractors.datos_basicos_licitacion.datos_
     DatosBasicosLicitacionExtractor
 )
 
+from src.services.semantic_extraction.extractors.entregas_licitacion.entregas_extractor import (
+    EntregasLicitacionExtractor
+)
+
 register_extractor("ITEMS_LICITACION", ItemsLicitacionExtractor)
 register_extractor("FINANZAS_LICITACION", FinanzasLicitacionExtractor)
 register_extractor("DATOS_BASICOS_LICITACION", DatosBasicosLicitacionExtractor)
+register_extractor("ENTREGAS_LICITACION", EntregasLicitacionExtractor)

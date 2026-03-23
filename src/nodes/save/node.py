@@ -11,6 +11,8 @@ class SaveNode(BaseNode):
         
         items = state.get('extraction_items') or []
         print(f"   -> Ítems guardados: {len(items)} items")
+
+        print(f"   -> Entregas guardadas: {state.get('extraction_entregas')}")
         
         state["status"] = "completed"
         return state

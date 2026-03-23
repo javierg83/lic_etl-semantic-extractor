@@ -11,30 +11,7 @@ class ItemsSubGraphState(TypedDict):
     final_items_result: Dict[str, Any]
     errors: Annotated[List[str], operator.add]
 
-# --- Shared Configuration ---
-UNIDADES_MAP = {
-    "EA": "Unidades",
-    "UN": "Unidades",
-    "UND": "Unidades",
-    "BX": "Cajas",
-    "CJ": "Cajas",
-    "PAQ": "Paquetes",
-    "BG": "Bolsas",
-    "VI": "Frascos",
-    "AMP": "Ampollas",
-    "CMP": "Comprimidos",
-    "SET": "Set",
-    "KIT": "Kit",
-    "PACK": "Pack",
-    "GR": "Gramos",
-    "KG": "Kilogramos",
-    "ML": "Mililitros",
-    "LT": "Litros",
-    "M": "Metros",
-    "M2": "Metros Cuadrados",
-    "M3": "Metros Cúbicos",
-    "000": "Millar / Adhesivo"
-}
+from src.utils.normalizer import normalizar_unidad
 
 # --- Nodes ---
 def node_semantic_locator(state: ItemsSubGraphState) -> ItemsSubGraphState:
@@ -128,7 +105,7 @@ def node_format_parser(state: ItemsSubGraphState) -> ItemsSubGraphState:
                     json_found = True
                     for i, p in enumerate(productos):
                         u_code = p.get("unidad_medida") or p.get("unidad") or "N/A"
-                        u_text = UNIDADES_MAP.get(u_code, u_code)
+                        u_text = normalizar_unidad(u_code)
 
                         item_base = {
                             "item_key": f"json_{i+1}",

@@ -484,6 +484,85 @@ def obtener_finanzas_por_licitacion(licitacion_id: str) -> dict | None:
         cur.close()
         conn.close()
 
+# --------------------------------------------------
+# ✅ ENTREGAS_LICITACION
+# --------------------------------------------------
+
+def guardar_entregas_licitacion(conn, licitacion_id, entregas: dict, semantic_run_id: str = None):
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+    def _extract_val(payload):
+        if not payload: return None
+        if isinstance(payload, dict) and "valor" in payload:
+            return payload.get("valor")
+        return payload
+
+    valores = {
+        "licitacion_id": licitacion_id,
+        "direccion_entrega": _extract_val(entregas.get("direccion_entrega")),
+        "comuna_entrega": _extract_val(entregas.get("comuna_entrega")),
+        "plazo_entrega": _extract_val(entregas.get("plazo_entrega")),
+        "fecha_entrega": _extract_val(entregas.get("fecha_entrega")),
+        "contacto_entrega": _extract_val(entregas.get("contacto_entrega")),
+        "horario_entrega": _extract_val(entregas.get("horario_entrega")),
+        "instrucciones_entrega": _extract_val(entregas.get("instrucciones_entrega")),
+    }
+
+    sql_update = """
+        UPDATE licitacion_entregas
+        SET
+            direccion_entrega = %(direccion_entrega)s,
+            comuna_entrega = %(comuna_entrega)s,
+            plazo_entrega = %(plazo_entrega)s,
+            fecha_entrega = %(fecha_entrega)s,
+            contacto_entrega = %(contacto_entrega)s,
+            horario_entrega = %(horario_entrega)s,
+            instrucciones_entrega = %(instrucciones_entrega)s,
+            actualizado_en = now()
+        WHERE licitacion_id = %(licitacion_id)s
+    """
+
+    sql_insert = """
+        INSERT INTO licitacion_entregas (
+            licitacion_id,
+            direccion_entrega,
+            comuna_entrega,
+            plazo_entrega,
+            fecha_entrega,
+            contacto_entrega,
+            horario_entrega,
+            instrucciones_entrega
+        ) VALUES (
+            %(licitacion_id)s,
+            %(direccion_entrega)s,
+            %(comuna_entrega)s,
+            %(plazo_entrega)s,
+            %(fecha_entrega)s,
+            %(contacto_entrega)s,
+            %(horario_entrega)s,
+            %(instrucciones_entrega)s
+        )
+    """
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql_update, valores)
+            if cur.rowcount == 0:
+                cur.execute(sql_insert, valores)
+                
+            # Guardar auditoría
+            if semantic_run_id:
+                for campo in ["direccion_entrega", "comuna_entrega", "plazo_entrega", "fecha_entrega", "contacto_entrega", "horario_entrega", "instrucciones_entrega"]:
+                    guardar_auditoria(conn, licitacion_id, semantic_run_id, "ENTREGAS_LICITACION", campo, entregas.get(campo, {}))
+            
+        conn.commit()
+        print(f"[{now}] ✅ Entregas persistidas correctamente | licitacion_id={licitacion_id}")
+    except Exception:
+        print(f"[{now}] ❌ Error persistiendo entregas | licitacion_id={licitacion_id}")
+        traceback.print_exc()
+        conn.rollback()
+        raise
+
 def actualizar_datos_basicos_licitacion(licitacion_id: str, datos: dict, semantic_run_id: str = None) -> None:
     conn = get_pg_conn()
     cur = conn.cursor()

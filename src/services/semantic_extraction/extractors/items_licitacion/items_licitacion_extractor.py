@@ -12,6 +12,7 @@ from src.services.semantic_extraction.extractors.items_licitacion.schema import 
     validate_items_licitacion_schema,
     ItemsLicitacionSchemaError,
 )
+from src.utils.normalizer import normalizar_unidad
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +172,12 @@ class ItemsLicitacionExtractor(BaseSemanticExtractor):
         logger.info("[ITEMS] Resultado validado correctamente por schema")
 
         items = data.get("items", [])
+        
+        # Aplicamos la normalización de la unidad de medida a los ítems extraídos
+        if items:
+            for item in items:
+                if "unidad" in item and item["unidad"]:
+                    item["unidad"] = normalizar_unidad(item["unidad"])
 
         # -----------------------------
         # LOG CRÍTICO: items vacíos

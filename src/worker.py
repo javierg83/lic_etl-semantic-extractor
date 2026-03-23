@@ -18,7 +18,9 @@ def process_message(licitacion_id: str, documento_ids: list):
             document_text=None,
             extraction_finances=None,
             extraction_items=None,
-            extraction_basic_data=None, # Added basic data initialization
+            extraction_basic_data=None,
+            extraction_entregas=None,
+            homologation_result=None,
             status="init",
             errors=[],
             current_step="init"

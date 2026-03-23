@@ -33,7 +33,13 @@ Estructura esperada:
   "descripcion": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
   "estado": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
   "entidad_solicitante": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
-  "unidad_compra": { "valor": string | null, "razonamiento": string, "fuentes": [...] }
+  "unidad_compra": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
+  "direccion_entrega": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
+  "comuna_entrega": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
+  "plazo_entrega": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
+  "fecha_entrega": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
+  "contacto_entrega": { "valor": string | null, "razonamiento": string, "fuentes": [...] },
+  "horario_entrega": { "valor": string | null, "razonamiento": string, "fuentes": [...] }
 }
 
 ------------------------------
@@ -61,6 +67,24 @@ DEFINICIONES:
   Nombre de la UNIDAD ESPECÍFICA, DEPARTAMENTO, DIRECCIÓN o GERENCIA dentro de la entidad que solicita la compra.
   (Ej: "Dirección de Obras Hidráulicas", "Departamento de Educación", "Gerencia de Proyectos").
   Si no se especifica una unidad distinta a la entidad, dejar en null.
+
+- direccion_entrega:
+  Dirección física exacta donde deben entregarse los productos o servicios.
+
+- comuna_entrega:
+  Comuna o ciudad especificada para la entrega.
+
+- plazo_entrega:
+  Cantidad de días, meses o tiempo estipulado para la entrega una vez emitida la orden de compra (Ej: "15 días corridos", "5 días hábiles").
+
+- fecha_entrega:
+  Fecha exacta calendario para la entrega, si está definida explícitamente (Ej: "24 de diciembre de 2026"). Si solo hay plazo, dejar en null.
+
+- contacto_entrega:
+  Nombre, cargo, departamento o teléfono de la persona responsable de recibir los productos o coordinar el despacho.
+
+- horario_entrega:
+  Rango horario estipulado para poder realizar entregas en la bodega o destino (Ej: "09:00 a 13:00 hrs").
 
 ------------------------------
 CONTEXTO:

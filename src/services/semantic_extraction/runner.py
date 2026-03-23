@@ -501,6 +501,19 @@ def run_semantic_extraction(
                     result.get("datos_basicos", {}),
                     semantic_run_id
                 )
+
+        elif concepto == "ENTREGAS_LICITACION":
+            from src.services.licitacion_service import guardar_entregas_licitacion
+            import datetime
+            now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{now}] 🚚 Procesando resultado de ENTREGAS_LICITACION para licitacion_id={licitacion_id}")
+            
+            try:
+                guardar_entregas_licitacion(conn, licitacion_id, result, semantic_run_id)
+                print(f"[{now}] ✅ Datos de entregas guardados correctamente en BD")
+            except Exception as e:
+                print(f"[{now}] ❌ Error al guardar datos de entregas: {str(e)}")
+
     finally:
         conn.close()
 
