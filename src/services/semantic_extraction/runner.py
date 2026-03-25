@@ -188,6 +188,8 @@ def _sanitize(text):
     return text or "sin_nombre"
 
 def _guardar_json_en_disco(nombre_licitacion: str, concepto: str, result: dict):
+    if not MODO_DEBUG:
+        return
     base_dir = os.path.join("salida_json", _sanitize(nombre_licitacion))
     os.makedirs(base_dir, exist_ok=True)
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -323,13 +325,14 @@ def run_semantic_extraction(
                 print(f"   ❌ Error en Batch {i+1}: {e}")
                 
         # --- DEBUGGING LÓGICA: Guardar archivo ---
-        import time
-        ts = time.strftime("%Y%m%d_%H%M%S")
-        debug_filename = f"salida_json/debug_batching_{ts}.json"
-        os.makedirs("salida_json", exist_ok=True)
-        with open(debug_filename, "w", encoding="utf-8") as f:
-            json.dump(debug_log, f, indent=2, ensure_ascii=False)
-        print(f"[SEMANTIC] 📝 Log de debug guardado en {debug_filename}")
+        if MODO_DEBUG:
+            import time
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            debug_filename = f"salida_json/debug_batching_{ts}.json"
+            os.makedirs("salida_json", exist_ok=True)
+            with open(debug_filename, "w", encoding="utf-8") as f:
+                json.dump(debug_log, f, indent=2, ensure_ascii=False)
+            print(f"[SEMANTIC] 📝 Log de debug guardado en {debug_filename}")
         # -----------------------------------------
         
         # Construir resultado maestro
